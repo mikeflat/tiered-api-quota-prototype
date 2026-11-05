@@ -41,17 +41,19 @@ context: |
   Testing: gateway with JUnit 5 + Testcontainers against real Redis; dashboard with
   Vitest + React Testing Library (including unhappy states); generator with Vitest.
 
-  Architecture style (MANDATORY for both backend and frontend): Clean Architecture.
+  Architecture style (MANDATORY for the gateway and the dashboard): Clean Architecture.
     - Dependencies point inward only: domain <- application (use cases) <- adapters <- frameworks/infrastructure.
-    - Domain/core logic (quota rules, periods, tiers, tenant status, polling state machine,
-      traffic pacing) is pure and framework-free: no Spring, Redis, React, fetch or Node APIs in it.
+    - Domain/core logic (quota rules, periods, tiers, tenant status, polling state machine)
+      is pure and framework-free: no Spring, Redis, React or fetch in it.
     - Use cases depend on ports (interfaces); Redis, HTTP, file loading, clocks and timers
       are adapters implementing those ports and are wired at the outermost layer.
     - Gateway: separate domain / application / adapter (in: web, filter; out: redis, config) / infrastructure packages.
     - Dashboard: separate domain models + logic, application hooks/use cases, API adapters
       (HTTP client), and presentational UI components; components never call fetch directly.
-    - Generator: separate pacing/selection logic from HTTP sending, config loading and logging.
     - Domain and use cases are unit-tested without frameworks; adapters get integration tests.
+    - Generator is EXEMPT: it is a demo traffic emulator, kept as a small flat script
+      (src/main.ts plus a few flat modules) with no layers, ports or lint-enforced layering.
+      Small pure helpers (pacing, weighted pick) may be plain functions for Vitest tests.
 
   Workflow rule (MANDATORY): never propose, suggest or start apply or archive automatically
   (no "next: /opsx:apply" or "/opsx:archive" prompts, buttons or follow-ups, and never run them
@@ -68,7 +70,7 @@ rules:
     - Requirements and scenarios must stay consistent with docs/02 requirements.md; flag any deviation explicitly
     - Write scenarios in WHEN/THEN form covering unhappy paths (Redis down, gateway down, invalid input) where relevant
   design:
-    - Follow Clean Architecture for both frontend and backend; show which layer (domain, application, adapter, infrastructure / UI) each new class or module belongs to and the ports it uses
+    - Follow Clean Architecture for the gateway and the dashboard (not the generator, which stays a flat script); show which layer (domain, application, adapter, infrastructure / UI) each new class or module belongs to and the ports it uses
     - Keep the component names, Redis key model and flows from docs/03 architecture.md unless the design explicitly justifies a change
   tasks:
     - "Order tasks inside-out: domain, then use cases/ports, then adapters, then wiring/UI"
@@ -79,7 +81,7 @@ rules:
 operations:
   apply:
     guidance:
-      - Always implement following Clean Architecture on both backend and frontend; never let domain or use-case code import framework, Redis, HTTP or UI libraries
+      - Always implement the gateway and the dashboard following Clean Architecture (the generator is exempt and stays a flat script); never let domain or use-case code import framework, Redis, HTTP or UI libraries
       - Re-read the relevant sections of docs/02 requirements.md and docs/03 architecture.md before implementing a task
       - Run the tests for the touched component before marking a task done
   archive:

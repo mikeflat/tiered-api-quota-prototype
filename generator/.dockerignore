@@ -1,0 +1,9 @@
+# Only package.json and src/ are copied; keep tests, dependencies and local env
+# files out of the build context and the image.
+node_modules
+coverage
+**/*.test.ts
+.env
+.env.*
+!.env.example
+*.log
