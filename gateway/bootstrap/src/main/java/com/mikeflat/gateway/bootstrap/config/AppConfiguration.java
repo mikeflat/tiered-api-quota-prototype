@@ -2,11 +2,16 @@ package com.mikeflat.gateway.bootstrap.config;
 
 import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
 import com.mikeflat.gateway.app.tenant.LoadTenantRegistry;
+import com.mikeflat.gateway.app.usage.UsageCounter;
+import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
+import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import com.mikeflat.gateway.domain.tenant.TenantRegistry;
 import com.mikeflat.gateway.domain.tenant.TenantRepository;
 import com.mikeflat.gateway.domain.tenant.Tier;
+import java.time.Clock;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -43,7 +48,18 @@ public class AppConfiguration {
     }
 
     @Bean
-    AdmitBusinessCall admitBusinessCall(AdmissionPolicy admissionPolicy) {
-        return new AdmitBusinessCall(admissionPolicy);
+    Clock clock() {
+        return Clock.systemUTC();
+    }
+
+    @Bean
+    UsageRecorder usageRecorder(UsageCounter usageCounter, Executor usageWriterExecutor) {
+        return new UsageRecorder(usageCounter, usageWriterExecutor);
+    }
+
+    @Bean
+    AdmitBusinessCall admitBusinessCall(
+            AdmissionPolicy admissionPolicy, UsageRecorder usageRecorder, QuotaSettings quotaSettings, Clock clock) {
+        return new AdmitBusinessCall(admissionPolicy, usageRecorder, quotaSettings, clock);
     }
 }

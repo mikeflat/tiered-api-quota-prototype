@@ -3,13 +3,18 @@ package com.mikeflat.gateway.adapters.api.filter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
+import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
+import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import com.mikeflat.gateway.domain.tenant.Tenant;
 import com.mikeflat.gateway.domain.tenant.TenantRegistry;
 import com.mikeflat.gateway.domain.tenant.Tier;
 import jakarta.servlet.ServletException;
 import java.io.IOException;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -26,8 +31,14 @@ class QuotaFilterTest {
 
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
     private final QuotaFilter filter = new QuotaFilter(
-            new AdmitBusinessCall(new AdmissionPolicy(
-                    new TenantRegistry(List.of(new Tenant(1, "Acme Corp", Tier.BRONZE))))),
+            new AdmitBusinessCall(
+                    new AdmissionPolicy(new TenantRegistry(List.of(new Tenant(1, "Acme Corp", Tier.BRONZE)))),
+                    new UsageRecorder(event -> 1, Runnable::run),
+                    new QuotaSettings(
+                            Duration.ofSeconds(60),
+                            Map.of(Tier.BRONZE, 100L, Tier.SILVER, 1_000L, Tier.GOLD, 10_000L),
+                            80),
+                    Clock.systemUTC()),
             jsonMapper);
     private final MockHttpServletResponse response = new MockHttpServletResponse();
     private final MockFilterChain chain = new MockFilterChain();

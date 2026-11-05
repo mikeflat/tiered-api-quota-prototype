@@ -2,11 +2,14 @@ spring:
   application:
     name: gateway
   data:
-    # Stub settings: Redis is configured but not used yet (first used by async-usage-recording).
-    # Lettuce connects lazily, so the gateway starts without a Redis server.
+    # Redis holds the per-tenant usage counters, written asynchronously by the usage writer thread.
+    # Lettuce connects lazily, so the gateway starts without a Redis server. Short timeouts keep a
+    # dead Redis from holding the writer for Lettuce's 60 s default on every event.
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:1s}
+      connect-timeout: ${SPRING_DATA_REDIS_CONNECT_TIMEOUT:1s}
   mvc:
     # Spring MVC's own errors (unreadable JSON, validation) as application/problem+json too.
     problemdetails:
@@ -30,6 +33,11 @@ quota:
     gold: ${QUOTA_LIMIT_GOLD:10000}
   near-threshold-percent: ${QUOTA_NEAR_THRESHOLD_PERCENT:80}
 
+# Usage events waiting for the single writer thread (FR-6b). When full, new events are dropped and
+# counted; request threads never wait. Invalid values stop startup. Also repeated in docker-compose.yml.
+usage-recording:
+  queue-capacity: ${USAGE_QUEUE_CAPACITY:10000}
+
 management:
   endpoints:
     web:
@@ -42,6 +50,7 @@ management:
       probes:
         enabled: false
   health:
-    # Health reports the gateway process only; Redis is not part of health yet (NFR-4).
+    # Health reports the gateway process only; Redis is used for counting but is not part of
+    # health yet (NFR-4, comes with redis-failure-and-health).
     redis:
       enabled: false

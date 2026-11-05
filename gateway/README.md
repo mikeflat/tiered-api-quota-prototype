@@ -4,13 +4,16 @@ Spring Boot 4 service on Java 21, built with Gradle (Kotlin DSL). It will enforc
 fixed-window request quota by tier (Bronze/Silver/Gold) and host the admin API used by the
 dashboard. Requirements, architecture and backlog are in [`../docs`](../docs).
 
-**Current state: stub business endpoint behind the tenant guard.** At startup the gateway loads
-the tenants from the shared `../config/tenants.json` into an in-memory registry and reads the
-quota settings (period, limit per tier, near threshold); it refuses to start if either is
-invalid. It answers `GET /actuator/health` and the stub business endpoint `GET /api/v1/resource`
-(see [Business API](#business-api)), which requires a known tenant in `X-Tenant-Id`. Every other
-path returns `404` (under `/api/` only after the tenant guard has passed). Quota enforcement, the
-admin API and Redis usage recording are added by later backlog items.
+**Current state: stub business endpoint behind the tenant guard, usage counted in Redis.** At
+startup the gateway loads the tenants from the shared `../config/tenants.json` into an in-memory
+registry and reads the quota settings (period, limit per tier, near threshold); it refuses to
+start if either is invalid. It answers `GET /actuator/health` and the stub business endpoint
+`GET /api/v1/resource` (see [Business API](#business-api)), which requires a known tenant in
+`X-Tenant-Id`. Every other path returns `404` (under `/api/` only after the tenant guard has
+passed). Every admitted business request is counted per tenant and period in Redis,
+asynchronously and off the request path (see [Usage recording](#usage-recording)). Nothing is
+enforced yet: every known tenant still gets `200`. Quota enforcement and the admin API are added
+by later backlog items.
 
 ## Requirements
 
@@ -18,8 +21,9 @@ admin API and Redis usage recording are added by later backlog items.
   Java 21, even when `JAVA_HOME` points to another version.
 - No local Gradle install. Always use the committed wrapper (`./gradlew`, or `gradlew.bat` in
   `cmd`/PowerShell).
-- Docker only for the image (see [Docker image](#docker-image)). `./gradlew build` does not need
-  Docker or Redis yet.
+- Docker for the image (see [Docker image](#docker-image)) and for the tests: `./gradlew build`
+  and `./gradlew test` start Redis containers with Testcontainers, so a Docker daemon must be
+  running. No Redis install is needed.
 
 ## Module layout
 
@@ -38,18 +42,15 @@ The modules map to the project's Clean Architecture layers like this:
 
 | Module (Gradle path) | Package | Clean Architecture layer | Content (now / later) |
 |---|---|---|---|
-| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings`, `AdmissionPolicy` with its `Admission` outcomes); later: `QuotaPeriod`, blocked-set rules in `AdmissionPolicy` |
-| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall`; later: tier change, usage recording use cases; ports for counters, metrics, clock |
+| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings` with `periodIndexAt`, `AdmissionPolicy` with its `Admission` outcomes, `UsageEvent`, `UsageOutcome`); later: seconds to the period boundary, blocked-set rules in `AdmissionPolicy` |
+| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed usage event for each admitted call), `usage.UsageRecorder` (hands events to the writer executor, applies them through the port, counts recorded, dropped and failed events), `usage.UsageCounter` port with `UsageRecordingFailedException`; later: tier change use case, blocked-set decision in `UsageRecorder`, metrics ports |
 | `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | now: `filter.QuotaFilter` (tenant guard) with its `TenantIdHeader` parser, `web.StubController`; later: quota checks in `QuotaFilter`, `AdminController` |
-| `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | later: Redis record script, `MetricsSnapshotJob` reader (subpackage `redis`) |
+| `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | now: `redis.RedisUsageCounter` (implements `UsageCounter`) and the `redis/record-usage.lua` script resource; later: global metrics in the script, `MetricsSnapshotJob` reader |
 | `:adapters:persistence` | `com.mikeflat.gateway.adapters.persistence` | outbound adapters: data sources, one subpackage per storage technology | now: `file.JsonFileTenantRepository`; later: a `db` package if tenants move to a database |
-| `:bootstrap` | `com.mikeflat.gateway.bootstrap` | infrastructure / frameworks: main class, wiring | `GatewayApplication`, per-module `@Configuration` classes, `@ConfigurationProperties`, `TenantLoadFailureAnalyzer` |
+| `:bootstrap` | `com.mikeflat.gateway.bootstrap` | infrastructure / frameworks: main class, wiring | `GatewayApplication`, per-module `@Configuration` classes, `@ConfigurationProperties`, `TenantLoadFailureAnalyzer`, `config.UsageWriterExecutor` (the single-thread usage writer with its bounded queue) |
 
 `adapters/` is only a folder that groups the adapter projects. It has no build logic.
 
-`adapters:infra` holds no classes yet. It keeps its root package directory with a `.gitkeep`
-file. Delete the `.gitkeep` when the directory gets its first class. Empty
-modules still build (their `compileJava` is `NO-SOURCE`) and produce empty jars for `bootstrap`.
 Add tests to a module together with its first code: a `test` task with test sources but no
 discovered tests fails.
 
@@ -60,11 +61,15 @@ The gateway follows a DDD / hexagonal rule for ports:
 | Port kind | Declared in | Implemented in | Examples |
 |---|---|---|---|
 | Repository of domain objects (loading/storing tenants, …) | the domain package of the aggregate it serves, with its exceptions | `:adapters:persistence` (one subpackage per storage technology) | `TenantRepository` → `JsonFileTenantRepository` |
-| Other outbound port (Redis usage recording and metrics, clock, other services) | `:app`, next to the use case that needs it | `:adapters:infra` | coming with usage recording |
+| Other outbound port (Redis usage recording and metrics, other services) | `:app`, next to the use case that needs it | `:adapters:infra` | `UsageCounter` → `RedisUsageCounter` |
 | Inbound port | `:app` use cases | called by `:adapters:api` (and by bootstrap at startup) | `LoadTenantRegistry`, `AdmitBusinessCall` |
 
 So moving tenants to a database only adds a `db` package to `:adapters:persistence` and changes
 `PersistenceConfiguration`; the domain, use cases and other adapters stay untouched.
+
+Time comes from `java.time.Clock`, a JDK type injected into `AdmitBusinessCall`, so no custom
+clock port is needed and tests use `Clock.fixed`. Likewise `UsageRecorder` takes a plain
+`java.util.concurrent.Executor`; the bounded thread pool behind it is built in `:bootstrap`.
 
 ## Dependency rules
 
@@ -88,11 +93,8 @@ Two checks enforce these rules. The Gradle declarations stop disallowed imports 
 `bootstrap/src/test/.../ArchitectureTest.java` (ArchUnit) fails the build if a wrong dependency
 is added later.
 
-**Temporary setting:** while `adapters:infra` is empty, the rules about it
-select no classes, which ArchUnit fails by default. `bootstrap/src/test/resources/archunit.properties`
-sets `archRule.failOnEmptyShould=false` so the rules pass now and take effect as soon as code
-lands. Remove that setting once every module has production classes, so a rule that silently
-matches nothing (for example after a package typo) fails again.
+ArchUnit runs with its default `failOnEmptyShould=true`: a rule whose classes match nothing (for
+example after a package typo) fails instead of passing silently.
 
 ## Where to add beans
 
@@ -107,9 +109,9 @@ One exception: controllers and controller advice in `adapters:api` carry `@RestC
 | Module                 | Configuration class                                   | Beans now |
 |------------------------|-------------------------------------------------------|-----------|
 | `domain`               | `bootstrap/.../config/DomainConfiguration.java`       | `QuotaSettings` (from `QuotaProperties`), `AdmissionPolicy` (from `TenantRegistry`) |
-| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `AdmitBusinessCall` |
+| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `UsageRecorder` (with the writer executor), `AdmitBusinessCall` |
 | `adapters:api`         | `bootstrap/.../config/ApiConfiguration.java`          | `StubController`, `FilterRegistrationBean<QuotaFilter>` (URL pattern `/api/*`, `REQUEST` dispatches only) |
-| `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | — |
+| `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | `RedisScript<Long>` (`redis/record-usage.lua`), `UsageCounter` (`RedisUsageCounter`, key TTL two periods), `usageWriterExecutor` (from `UsageRecordingProperties`, destroyed with `shutdownNow`) |
 | `adapters:persistence` | `bootstrap/.../config/PersistenceConfiguration.java`  | `TenantRepository` (`JsonFileTenantRepository`, from `TenantsProperties`) |
 
 `GatewayApplication` imports all five.
@@ -158,6 +160,46 @@ too long or not registered). The header value is never echoed in the body or log
 tenant, an unknown path under `/api/` returns `404`. Paths outside `/api/` (`/actuator/health`,
 later the admin API, and look-alikes such as `/apix/...`) are not guarded.
 
+## Usage recording
+
+Every business request that passes the tenant guard produces one usage event: tenant id, outcome
+(`allowed`; `rejected` starts with quota enforcement), the period index
+`p = floor(epochSeconds / QUOTA_PERIOD_SECONDS)` and the epoch second, all read from the clock
+when the request arrives. Requests rejected by the guard (`400`) produce no event.
+
+- **Request thread.** `AdmitBusinessCall` hands the event to `UsageRecorder.submit`, which only
+  offers it to the writer's bounded queue and returns. It never waits for Redis, for the writer
+  or for queue space, and does no I/O. The response is the same whether recording succeeds,
+  fails or is dropped.
+- **Bounded queue, drop on overflow.** The writer is a single-thread `ThreadPoolExecutor` with an
+  `ArrayBlockingQueue` of `USAGE_QUEUE_CAPACITY` waiting events (the writer holds one more in
+  flight). When the queue is full the new event is dropped and the dropped count grows.
+- **One writer, one Redis call per event.** The daemon thread `usage-writer` applies events in
+  order, each with one call of `redis/record-usage.lua` (`EVALSHA`, falling back to `EVAL` when
+  Redis has lost its script cache). The script returns the tenant's `used` for the event's
+  period (not used yet; quota enforcement compares it with the limit).
+- **Redis failures.** A failed or timed-out call (`SPRING_DATA_REDIS_TIMEOUT`, default `1s`)
+  discards the event and grows the failed count; the writer continues with the next event and
+  never retries. Once Redis is back, later events are counted without a restart.
+- **Lifecycle.** The writer thread starts with the first event, so startup does not contact
+  Redis. On shutdown the executor is stopped with `shutdownNow`: queued events are discarded and
+  the writer is interrupted, so shutdown never waits for Redis.
+
+The recorded, dropped and failed counts are kept in memory (`UsageRecorder.stats()`); logging
+them and Redis health come with `redis-failure-and-health`.
+
+**Redis keys.** Periods are aligned to the UTC epoch; a new period starts from zero because its
+keys are new, with no reset job. Each key gets a TTL of two periods (`2 × QUOTA_PERIOD_SECONDS`)
+when the script creates it, and later increments do not extend it.
+
+| Key | Written by | Value |
+|---|---|---|
+| `quota:used:{tenantId}:{p}` | allowed events (`INCR`) | requests counted toward the tenant's quota in period `p` |
+| `quota:rejected:{tenantId}:{p}` | rejected events (`INCR`) | requests rejected for the tenant in period `p` |
+
+An event always uses its own period index, so an event applied after the period boundary still
+counts toward the period it arrived in.
+
 ## Configuration
 
 Settings come from environment variables. `.env.example` lists them with their defaults.
@@ -165,19 +207,23 @@ Settings come from environment variables. `.env.example` lists them with their d
 | Variable                       | Default                  | Meaning                                                        |
 |--------------------------------|--------------------------|----------------------------------------------------------------|
 | `SERVER_PORT`                  | `8080`                   | HTTP port the gateway listens on                               |
-| `SPRING_DATA_REDIS_HOST`       | `localhost`              | Redis host for usage counters (not used yet)                   |
-| `SPRING_DATA_REDIS_PORT`       | `6379`                   | Redis port (not used yet)                                      |
+| `SPRING_DATA_REDIS_HOST`       | `localhost`              | Redis host for usage counters                                  |
+| `SPRING_DATA_REDIS_PORT`       | `6379`                   | Redis port                                                     |
+| `SPRING_DATA_REDIS_TIMEOUT`    | `1s`                     | Redis command timeout; bounds how long one event can hold the writer |
+| `SPRING_DATA_REDIS_CONNECT_TIMEOUT` | `1s`                | Redis connect timeout                                          |
 | `TENANTS_FILE`                 | `../config/tenants.json` | Tenants file, relative to the working directory; read once at startup |
 | `QUOTA_PERIOD_SECONDS`         | `60`                     | Fixed-window period length in whole seconds (production: `86400`), ≥ 1 |
 | `QUOTA_LIMIT_BRONZE`           | `100`                    | Requests per period for Bronze tenants, ≥ 1                    |
 | `QUOTA_LIMIT_SILVER`           | `1000`                   | Requests per period for Silver tenants, ≥ 1                    |
 | `QUOTA_LIMIT_GOLD`             | `10000`                  | Requests per period for Gold tenants, ≥ 1                      |
 | `QUOTA_NEAR_THRESHOLD_PERCENT` | `80`                     | A tenant is "near limit" from this percent of its limit, 1..99 |
+| `USAGE_QUEUE_CAPACITY`         | `10000`                  | Usage events waiting for the writer, ≥ 1; when full, new events are dropped and counted |
 
 The `TENANTS_FILE` default fits running the jar from `gateway/`. `./gradlew :bootstrap:bootRun`
 and `./gradlew test` set it to the repository's `config/tenants.json` (absolute path), and the
-Docker image sets it to `/config/tenants.json`. The quota defaults live in
-`bootstrap/src/main/resources/application.yaml` and are repeated in the root `docker-compose.yml`.
+Docker image sets it to `/config/tenants.json`. The quota and `USAGE_QUEUE_CAPACITY` defaults
+live in `bootstrap/src/main/resources/application.yaml` and are repeated in the root
+`docker-compose.yml`.
 
 **Tenants file format:** a JSON array of objects with an integer `id` (a JSON number, unique,
 1 or more, up to a Java `long`; sent by clients in `X-Tenant-Id`, which accepts at most 18
@@ -188,7 +234,8 @@ number as a name, are rejected. Example entry: `{ "id": 1, "name": "Acme Corp", 
 
 **Fail fast:** the tenants and quota settings are loaded before the web server starts. If the
 tenants file is missing or invalid (not a JSON array of objects, empty, a missing or blank field,
-an id that is not a positive whole number, an unknown tier, a duplicate id) or a quota setting is out of range or not a number, the gateway
+an id that is not a positive whole number, an unknown tier, a duplicate id) or a quota or
+`USAGE_QUEUE_CAPACITY` setting is out of range or not a number, the gateway
 prints an `APPLICATION FAILED TO START` report naming the file or setting and the problem, and
 exits with a non-zero code without ever answering on its port. On success it logs two lines:
 
@@ -205,7 +252,7 @@ returns `200` with `{"status":"UP"}`, without component details. Other actuator 
 
 Health reports the gateway process only. Redis is not part of health yet, and the gateway does
 not connect to Redis at startup (Lettuce connects on first use), so it starts and stays `UP`
-with no Redis running. A Redis health component comes with `redis-failure-and-health`; liveness
+with no Redis running; business requests still succeed, they are just not counted. A Redis health component comes with `redis-failure-and-health`; liveness
 and readiness will still not depend on Redis.
 
 ## Build, run and test
@@ -215,11 +262,12 @@ Run these from `gateway/`:
 ```bash
 ./gradlew build                      # compile, run all tests, build the jar
 ./gradlew test                       # all tests
-./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings)
-./gradlew :app:test                  # use case tests (tenant loading, request admission)
+./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings, usage events)
+./gradlew :app:test                  # use case tests (tenant loading, request admission, usage recorder)
 ./gradlew :adapters:api:test         # tenant guard filter, problem body and stub controller tests
+./gradlew :adapters:infra:test       # Redis usage counter and record script (Testcontainers Redis)
 ./gradlew :adapters:persistence:test # tenants file adapter tests
-./gradlew :bootstrap:test            # configuration, startup, health, business endpoint, port and architecture tests
+./gradlew :bootstrap:test            # configuration, startup, health, business endpoint, usage writer, usage recording with and without Redis, port and architecture tests
 ./gradlew :adapters:api:compileJava  # generate from the OpenAPI spec, compile
 ./gradlew :bootstrap:bootRun         # run from source on port 8080 (Redis not needed)
 java -jar bootstrap/build/libs/gateway.jar                    # run the built jar (reads ../config/tenants.json)
@@ -232,9 +280,10 @@ curl -i http://localhost:8080/api/v1/resource                        # 400 probl
 
 `./gradlew build` produces one executable artifact: `bootstrap/build/libs/gateway.jar`.
 
-The tests need neither Docker nor Redis yet. Testcontainers is already a test dependency; the
-first Redis change adds container tests, and from then on `./gradlew test` needs a running
-Docker daemon.
+`./gradlew test` and `./gradlew build` need a running Docker daemon: the `:adapters:infra` and
+`:bootstrap` tests start `redis:8.10-alpine` containers with Testcontainers. No Redis install is
+needed. The other Spring tests do not need Redis: their recording attempts against the default
+`localhost:6379` simply fail and are counted.
 
 ## Docker image
 

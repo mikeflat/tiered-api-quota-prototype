@@ -101,4 +101,16 @@ class StartupFailureTest {
                 .contains("quota.periodSeconds")
                 .contains("\"0\"");
     }
+
+    @Test
+    void zero_queue_capacity_stops_startup(CapturedOutput output) {
+        Throwable failure = start("--USAGE_QUEUE_CAPACITY=0");
+
+        assertThat(failure).isNotNull();
+        assertThat(webServerStarts.ports).isEmpty();
+        assertThat(output.getOut() + output.getErr())
+                .contains("APPLICATION FAILED TO START")
+                .contains("usage-recording.queueCapacity")
+                .contains("\"0\"");
+    }
 }

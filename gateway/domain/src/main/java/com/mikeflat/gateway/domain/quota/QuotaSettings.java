@@ -45,6 +45,10 @@ public record QuotaSettings(Duration period, Map<Tier, Long> limits, int nearThr
         return period.getSeconds();
     }
 
+    public long periodIndexAt(long epochSecond) {
+        return Math.floorDiv(epochSecond, periodSeconds());
+    }
+
     public long limitOf(Tier tier) {
         return limits.get(tier);
     }

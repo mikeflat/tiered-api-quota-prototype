@@ -154,6 +154,32 @@ class QuotaSettingsTest {
     }
 
     @Test
+    void period_index_of_second_inside_period() {
+        assertThat(defaults.periodIndexAt(1_800_000_030L)).isEqualTo(30_000_000L);
+        assertThat(defaults.periodIndexAt(1_800_000_059L)).isEqualTo(30_000_000L);
+    }
+
+    @Test
+    void period_index_changes_on_boundary() {
+        assertThat(defaults.periodIndexAt(1_800_000_000L)).isEqualTo(30_000_000L);
+        assertThat(defaults.periodIndexAt(1_800_000_060L)).isEqualTo(30_000_001L);
+    }
+
+    @Test
+    void period_index_for_one_day_period() {
+        QuotaSettings daily = settings(Duration.ofDays(1), DEFAULT_LIMITS, 80);
+
+        assertThat(daily.periodIndexAt(86_399L)).isEqualTo(0L);
+        assertThat(daily.periodIndexAt(86_400L)).isEqualTo(1L);
+        assertThat(daily.periodIndexAt(1_800_000_030L)).isEqualTo(20_833L);
+    }
+
+    @Test
+    void period_index_at_epoch_start_is_zero() {
+        assertThat(defaults.periodIndexAt(0L)).isZero();
+    }
+
+    @Test
     void near_boundary_overflow_rejected() {
         assertThatThrownBy(() -> defaults.nearBoundary(Long.MAX_VALUE))
                 .isInstanceOf(ArithmeticException.class);
