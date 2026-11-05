@@ -1,5 +1,10 @@
 package com.mikeflat.gateway.bootstrap.config;
 
+import com.mikeflat.gateway.domain.quota.QuotaSettings;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -10,5 +15,20 @@ import org.springframework.context.annotation.Configuration;
  * free of Spring.
  */
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(QuotaProperties.class)
 public class DomainConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(DomainConfiguration.class);
+
+    @Bean
+    QuotaSettings quotaSettings(QuotaProperties properties) {
+        QuotaSettings settings = properties.toSettings();
+        log.info("Quota settings: period {} s, limits Bronze {}, Silver {}, Gold {}, near threshold {} %",
+                settings.periodSeconds(),
+                properties.limits().bronze(),
+                properties.limits().silver(),
+                properties.limits().gold(),
+                settings.nearThresholdPercent());
+        return settings;
+    }
 }

@@ -53,13 +53,34 @@ context: |
       is pure and framework-free: no Spring, Redis, React or fetch in it.
     - Use cases depend on ports (interfaces); Redis, HTTP, file loading, clocks and timers
       are adapters implementing those ports and are wired at the outermost layer.
-    - Gateway: separate domain / application / adapter (in: web, filter; out: redis, config) / infrastructure packages.
+    - Gateway: separate domain / application / adapter (in: web, filter; out: redis, persistence) / infrastructure packages.
+    - Gateway follows DDD / hexagonal style for ports:
+        * Repository interfaces (loading and storing domain objects such as tenants) are domain
+          ports, declared in the domain package of the aggregate they serve, together with
+          their exceptions. Implementations live in the persistence adapter module
+          (:adapters:persistence, one subpackage per storage technology, e.g. file, db).
+        * Other outbound ports that are not repositories of domain objects (Redis usage
+          recording and metrics, clock, other external services) are declared in the
+          application layer next to the use cases that need them; implementations live in
+          :adapters:infra (communication with other services).
+        * Inbound ports are the use cases in the application layer; web/filter adapters call them.
     - Dashboard: separate domain models + logic, application hooks/use cases, API adapters
       (HTTP client), and presentational UI components; components never call fetch directly.
     - Domain and use cases are unit-tested without frameworks; adapters get integration tests.
     - Generator is EXEMPT: it is a demo traffic emulator, kept as a small flat script
       (src/main.ts plus a few flat modules) with no layers, ports or lint-enforced layering.
       Small pure helpers (pacing, weighted pick) may be plain functions for Vitest tests.
+
+  Code comments rule (MANDATORY): do not write comments in code — no Javadoc/JSDoc/TSDoc,
+  no class, method, field or inline comments explaining what the code does. They add noise.
+  The code itself must express the ideas: intention-revealing names for classes, methods,
+  variables and tests, small focused methods, and types that make invariants explicit.
+  If something seems to need a comment, rename or restructure the code instead.
+
+  Test naming rule (MANDATORY): test method/function names use snake_case and read as the
+  behaviour they verify, e.g. lookup_is_case_sensitive, unknown_tier_stops_startup
+  (JUnit @Test / @ParameterizedTest methods and any named test functions; test classes keep
+  their normal language naming, e.g. TenantRegistryTest).
 
   Workflow rule (MANDATORY): never propose, suggest or start apply or archive automatically
   (no "next: /opsx:apply" or "/opsx:archive" prompts, buttons or follow-ups, and never run them
@@ -76,7 +97,7 @@ rules:
     - Requirements and scenarios must stay consistent with docs/02 requirements.md; flag any deviation explicitly
     - Write scenarios in WHEN/THEN form covering unhappy paths (Redis down, gateway down, invalid input) where relevant
   design:
-    - Follow Clean Architecture for the gateway and the dashboard (not the generator, which stays a flat script); show which layer (domain, application, adapter, infrastructure / UI) each new class or module belongs to and the ports it uses
+    - Follow Clean Architecture for the gateway and the dashboard (not the generator, which stays a flat script); show which layer (domain, application, adapter, infrastructure / UI) each new class or module belongs to and the ports it uses; in the gateway, repository interfaces are domain ports and other outbound ports are application ports (DDD / hexagonal rule above)
     - Keep the component names, Redis key model and flows from docs/03 architecture.md unless the design explicitly justifies a change
   tasks:
     - "Order tasks inside-out: domain, then use cases/ports, then adapters, then wiring/UI"
@@ -90,6 +111,8 @@ operations:
       - Always implement the gateway and the dashboard following Clean Architecture (the generator is exempt and stays a flat script); never let domain or use-case code import framework, Redis, HTTP or UI libraries
       - Re-read the relevant sections of docs/02 requirements.md and docs/03 architecture.md before implementing a task
       - Run the tests for the touched component before marking a task done
+      - Write no comments in code (no Javadoc/JSDoc, no inline comments); express intent through names and structure instead
+      - Name test methods/functions in snake_case describing the behaviour, e.g. lookup_is_case_sensitive
   archive:
     guidance:
       - Confirm the related backlog item in docs/04 backlog.md is fully covered before archiving

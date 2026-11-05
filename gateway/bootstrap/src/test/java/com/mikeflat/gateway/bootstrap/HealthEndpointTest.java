@@ -16,7 +16,7 @@ class HealthEndpointTest {
     private int port;
 
     @Test
-    void healthReportsUpAsJsonWithoutCredentials() throws Exception {
+    void health_reports_up_as_json_without_credentials() throws Exception {
         HttpResponse<String> response = HttpProbe.get(port, "/actuator/health");
 
         assertThat(response.statusCode()).isEqualTo(200);
@@ -30,18 +30,18 @@ class HealthEndpointTest {
     }
 
     @Test
-    void environmentEndpointIsNotExposed() throws Exception {
+    void environment_endpoint_is_not_exposed() throws Exception {
         assertThat(HttpProbe.get(port, "/actuator/env").statusCode()).isEqualTo(404);
     }
 
     @Test
-    void beansEndpointIsNotExposed() throws Exception {
+    void beans_endpoint_is_not_exposed() throws Exception {
         assertThat(HttpProbe.get(port, "/actuator/beans").statusCode()).isEqualTo(404);
     }
 
     /** No business endpoint exists yet; the stub endpoint arrives with a later change. */
     @Test
-    void unknownApiPathIsNotFound() throws Exception {
+    void unknown_api_path_is_not_found() throws Exception {
         assertThat(HttpProbe.get(port, "/api/v1/resource").statusCode()).isEqualTo(404);
     }
 }

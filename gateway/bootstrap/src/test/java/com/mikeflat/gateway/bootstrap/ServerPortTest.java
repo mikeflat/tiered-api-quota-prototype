@@ -23,7 +23,7 @@ class ServerPortTest {
     }
 
     @Test
-    void healthAnswersOnConfiguredPort() throws Exception {
+    void health_answers_on_configured_port() throws Exception {
         assertThat(HttpProbe.get(PORT, "/actuator/health").statusCode()).isEqualTo(200);
     }
 

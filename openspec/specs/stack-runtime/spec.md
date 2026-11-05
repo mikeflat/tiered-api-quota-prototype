@@ -40,6 +40,25 @@ Inside the stack the gateway SHALL be configured to reach Redis by its service n
 - **WHEN** the stack is running
 - **THEN** the generator log shows its startup line naming `http://gateway:8080`
 
+### Requirement: Gateway reads the shared tenants file
+The repository's `config/tenants.json` SHALL be mounted read-only into the gateway at `/config/tenants.json`, so the gateway and later the generator share one tenant source.
+
+#### Scenario: Gateway reads the shared tenants file
+- **WHEN** the stack is running
+- **THEN** the gateway container has `config/tenants.json` mounted read-only at `/config/tenants.json`
+- **AND** the gateway log shows 15 tenants loaded from `/config/tenants.json`
+
+### Requirement: Quota settings are passed to the gateway
+The quota settings `QUOTA_PERIOD_SECONDS`, `QUOTA_LIMIT_BRONZE`, `QUOTA_LIMIT_SILVER`, `QUOTA_LIMIT_GOLD` and `QUOTA_NEAR_THRESHOLD_PERCENT` SHALL be passed to the gateway from the shell environment or a root `.env` file when set, and SHALL fall back to the gateway defaults otherwise.
+
+#### Scenario: Quota setting from the root .env
+- **WHEN** the root `.env` sets `QUOTA_PERIOD_SECONDS=30` and the stack is started
+- **THEN** the gateway log shows an effective period of 30 s
+
+#### Scenario: Quota settings not set
+- **WHEN** no quota variable is set in the environment or `.env` and the stack is started
+- **THEN** the gateway log shows the default settings: period 60 s, Bronze 100, Silver 1000, Gold 10000, near threshold 80 %
+
 ### Requirement: Host ports are local and configurable
 The stack SHALL publish the dashboard on host port `3000`, the gateway on `8080` and Redis on `6379` by default, bound to the loopback interface only, and each host port SHALL be overridable through an environment variable without editing files under version control (NFR-8).
 

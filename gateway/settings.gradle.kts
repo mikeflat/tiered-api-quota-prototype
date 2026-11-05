@@ -5,5 +5,6 @@ include(
     "app",
     "adapters:api",
     "adapters:infra",
+    "adapters:persistence",
     "bootstrap",
 )

@@ -30,6 +30,17 @@ services:
     environment:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
+      # Quota settings from the shell or the root .env. The defaults repeat those in
+      # gateway/bootstrap/src/main/resources/application.yaml; keep both in sync. A default is
+      # needed because an empty pass-through value would fail binding in the gateway.
+      QUOTA_PERIOD_SECONDS: ${QUOTA_PERIOD_SECONDS:-60}
+      QUOTA_LIMIT_BRONZE: ${QUOTA_LIMIT_BRONZE:-100}
+      QUOTA_LIMIT_SILVER: ${QUOTA_LIMIT_SILVER:-1000}
+      QUOTA_LIMIT_GOLD: ${QUOTA_LIMIT_GOLD:-10000}
+      QUOTA_NEAR_THRESHOLD_PERCENT: ${QUOTA_NEAR_THRESHOLD_PERCENT:-80}
+    # The shared tenants seed (also read by the generator later); the image expects it here.
+    volumes:
+      - ./config/tenants.json:/config/tenants.json:ro
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
     depends_on:

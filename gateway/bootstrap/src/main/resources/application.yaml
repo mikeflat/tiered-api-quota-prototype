@@ -15,6 +15,21 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 
+# Tenants are loaded once at startup; the gateway does not start if the file is missing or invalid.
+# The default fits running the jar from gateway/; Gradle bootRun/test and the Docker image set TENANTS_FILE.
+tenants:
+  file: ${TENANTS_FILE:../config/tenants.json}
+
+# Static quota settings (FR-10, NFR-8). Invalid values stop startup.
+# The same defaults are repeated in the root docker-compose.yml (gateway environment); keep both in sync.
+quota:
+  period-seconds: ${QUOTA_PERIOD_SECONDS:60}
+  limits:
+    bronze: ${QUOTA_LIMIT_BRONZE:100}
+    silver: ${QUOTA_LIMIT_SILVER:1000}
+    gold: ${QUOTA_LIMIT_GOLD:10000}
+  near-threshold-percent: ${QUOTA_NEAR_THRESHOLD_PERCENT:80}
+
 management:
   endpoints:
     web:

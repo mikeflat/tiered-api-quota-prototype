@@ -13,6 +13,7 @@ COPY domain/build.gradle.kts domain/
 COPY app/build.gradle.kts app/
 COPY adapters/api/build.gradle.kts adapters/api/
 COPY adapters/infra/build.gradle.kts adapters/infra/
+COPY adapters/persistence/build.gradle.kts adapters/persistence/
 COPY bootstrap/build.gradle.kts bootstrap/
 
 # A CRLF checkout on Windows would break the wrapper script.
@@ -39,6 +40,9 @@ WORKDIR /app
 COPY --from=build --chown=app:app /workspace/gateway.jar /app/gateway.jar
 USER app
 ENV SERVER_PORT=8080
+# The tenants file is not part of the image: mount the repository's config/tenants.json here
+# (docker compose does). Without it the gateway refuses to start.
+ENV TENANTS_FILE=/config/tenants.json
 EXPOSE 8080
 # Shell-form check, so it follows a SERVER_PORT override given at `docker run`.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \

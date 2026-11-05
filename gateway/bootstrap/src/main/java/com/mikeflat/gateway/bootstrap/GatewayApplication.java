@@ -4,6 +4,7 @@ import com.mikeflat.gateway.bootstrap.config.ApiConfiguration;
 import com.mikeflat.gateway.bootstrap.config.AppConfiguration;
 import com.mikeflat.gateway.bootstrap.config.DomainConfiguration;
 import com.mikeflat.gateway.bootstrap.config.InfraConfiguration;
+import com.mikeflat.gateway.bootstrap.config.PersistenceConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Import;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Import;
     AppConfiguration.class,
     ApiConfiguration.class,
     InfraConfiguration.class,
+    PersistenceConfiguration.class,
 })
 public class GatewayApplication {
 
