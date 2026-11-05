@@ -1,0 +1,82 @@
+schema: spec-driven
+
+# Project context: injected into every OpenSpec artifact and workflow.
+# Source of truth is /docs; only the constraints that must guide every change are
+# extracted here. Read the linked documents for full details before writing artifacts.
+context: |
+  Project: Tiered Tenant Quota Prototype — a working prototype of three parts:
+    1. Quota gateway (Java 21, Spring Boot MVC, Actuator, Spring Data Redis/Lettuce,
+       Gradle Kotlin DSL) enforcing a per-tenant fixed-window quota by tier
+       (Bronze/Silver/Gold), rejecting over-limit requests with 429 + Retry-After.
+       Also hosts the admin API (/admin/snapshot, /admin/tiers, PUT /admin/tenants/{id}/tier).
+    2. Admin dashboard (React + TypeScript + Vite, served by nginx which reverse-proxies
+       /admin/** and /actuator/health). Polls snapshot every 1 s and health every 5 s.
+    3. Traffic generator (Node.js LTS, TypeScript run directly, no build step).
+  Plus Redis for counters, all run with docker compose and scripts in /scripts.
+
+  Source documents (read the relevant ones before creating any artifact):
+    - Initial task:   docs/01 task.md
+    - Requirements:   docs/02 requirements.md  (FR-1..FR-28, NFR-1..NFR-9, scenarios S1..S9, out of scope)
+    - Architecture:   docs/03 architecture.md  (components, Redis data model, request/snapshot flows, decisions D1..D13)
+    - Backlog:        docs/04 backlog.md       (16 items; each item = one OpenSpec change, backticked name = change id)
+    - Discussion:     docs/00 discussion.pdf   (background only)
+
+  Non-negotiable design constraints (from requirements/architecture):
+    - Quota decision is in memory with no I/O: a per-period, per-instance blocked set.
+      Redis is never on the request path.
+    - Usage is recorded asynchronously: bounded queue + one writer thread, one Lua
+      EVALSHA per request. Queue full -> drop event and count drops; request threads never block.
+    - Fixed window aligned to UTC epoch; period index p = floor(epochSeconds / periodSeconds).
+      Prototype period = 60 s (production = 1 day). Resets happen via key naming + TTL, no jobs.
+    - Only allowed requests consume quota; bounded overshoot is accepted.
+    - Redis failure must not become an API outage: keep enforcing from the blocked set,
+      no new blocks, nothing counted, log failures. Liveness/readiness must not depend on Redis.
+    - Snapshot cost must not depend on tenant count or number of open dashboards
+      (global part cached once per second; rows limited to one page).
+    - Tier changes are in-memory only, work while Redis is down, remove the tenant from the blocked set.
+    - Config (period, tier limits, near threshold 80%, generator traffic shape) changes without code changes.
+    - Respect the out-of-scope list in docs/02 requirements.md section 6 (no auth, no DB,
+      no SSE, single gateway instance, no component library).
+
+  Testing: gateway with JUnit 5 + Testcontainers against real Redis; dashboard with
+  Vitest + React Testing Library (including unhappy states); generator with Vitest.
+
+  Architecture style (MANDATORY for both backend and frontend): Clean Architecture.
+    - Dependencies point inward only: domain <- application (use cases) <- adapters <- frameworks/infrastructure.
+    - Domain/core logic (quota rules, periods, tiers, tenant status, polling state machine,
+      traffic pacing) is pure and framework-free: no Spring, Redis, React, fetch or Node APIs in it.
+    - Use cases depend on ports (interfaces); Redis, HTTP, file loading, clocks and timers
+      are adapters implementing those ports and are wired at the outermost layer.
+    - Gateway: separate domain / application / adapter (in: web, filter; out: redis, config) / infrastructure packages.
+    - Dashboard: separate domain models + logic, application hooks/use cases, API adapters
+      (HTTP client), and presentational UI components; components never call fetch directly.
+    - Generator: separate pacing/selection logic from HTTP sending, config loading and logging.
+    - Domain and use cases are unit-tested without frameworks; adapters get integration tests.
+
+# Per-artifact rules
+rules:
+  proposal:
+    - Map the change to its backlog item in docs/04 backlog.md and use the backticked name as the change id
+    - Reference the FR/NFR ids from docs/02 requirements.md and decision ids (D1..D13) from docs/03 architecture.md that the change covers
+    - State what is out of scope, consistent with docs/02 requirements.md section 6
+  specs:
+    - Requirements and scenarios must stay consistent with docs/02 requirements.md; flag any deviation explicitly
+    - Write scenarios in WHEN/THEN form covering unhappy paths (Redis down, gateway down, invalid input) where relevant
+  design:
+    - Follow Clean Architecture for both frontend and backend; show which layer (domain, application, adapter, infrastructure / UI) each new class or module belongs to and the ports it uses
+    - Keep the component names, Redis key model and flows from docs/03 architecture.md unless the design explicitly justifies a change
+  tasks:
+    - Order tasks inside-out: domain, then use cases/ports, then adapters, then wiring/UI
+    - Include test tasks per layer (unit tests for domain/use cases, Testcontainers / RTL / Vitest for adapters and UI)
+    - Keep each task small enough to finish and verify in one sitting
+
+# Per-operation guidance
+operations:
+  apply:
+    guidance:
+      - Always implement following Clean Architecture on both backend and frontend; never let domain or use-case code import framework, Redis, HTTP or UI libraries
+      - Re-read the relevant sections of docs/02 requirements.md and docs/03 architecture.md before implementing a task
+      - Run the tests for the touched component before marking a task done
+  archive:
+    guidance:
+      - Confirm the related backlog item in docs/04 backlog.md is fully covered before archiving

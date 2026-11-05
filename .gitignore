@@ -1,0 +1,100 @@
+# =====================================================================
+# Tiered Tenant Quota Prototype
+#   /gateway    Java 21, Spring Boot, Gradle Kotlin DSL
+#   /dashboard  React + TypeScript + Vite (served by nginx)
+#   /generator  Node.js + TypeScript (run directly, no build)
+#   docker compose, Redis, scripts in /scripts
+# =====================================================================
+
+# ---------- OS ----------
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---------- IDEs / editors ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+.settings/
+.project
+.classpath
+.factorypath
+.apt_generated/
+.sts4-cache/
+.springBeans
+nbproject/
+nbbuild/
+nbdist/
+.nb-gradle/
+*.swp
+*.swo
+*~
+
+# ---------- Environment / secrets ----------
+.env
+.env.*
+!.env.example
+*.local
+
+# ---------- Logs / temp ----------
+logs/
+*.log
+*.tmp
+tmp/
+
+# ---------- Java / Gradle (gateway) ----------
+.gradle/
+build/
+!**/src/**/build/
+bin/
+!**/src/**/bin/
+*.class
+hs_err_pid*.log
+replay_pid*.log
+# Keep the Gradle wrapper
+!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+
+# ---------- Node / Vite / TypeScript (dashboard, generator) ----------
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+coverage/
+.eslintcache
+.stylelintcache
+.npm/
+.pnpm-store/
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------- Tests ----------
+**/test-results/
+**/playwright-report/
+.vitest/
+
+# ---------- Docker / Redis ----------
+docker-compose.override.yml
+dump.rdb
+appendonly.aof
+appendonlydir/
+
+# ---------- Claude Code (keep shared skills/commands, ignore personal settings) ----------
+.claude/settings.local.json
