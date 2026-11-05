@@ -3,6 +3,8 @@ package com.mikeflat.gateway.bootstrap.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
+import com.mikeflat.gateway.domain.tenant.Tenant;
+import com.mikeflat.gateway.domain.tenant.TenantRegistry;
 import com.mikeflat.gateway.domain.tenant.Tier;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ class QuotaPropertiesBindingTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer())
+            .withBean(TenantRegistry.class, () -> new TenantRegistry(List.of(new Tenant(1, "Acme Corp", Tier.BRONZE))))
             .withUserConfiguration(DomainConfiguration.class);
 
     @Test

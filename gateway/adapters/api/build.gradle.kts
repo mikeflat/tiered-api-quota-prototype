@@ -20,7 +20,6 @@ dependencies {
 }
 
 // Controller interfaces and DTOs are generated from the OpenAPI spec at build time (not committed).
-// The spec is a stub with no paths for now, so nothing is generated until endpoints are added.
 val generatedOpenApiDir = layout.buildDirectory.dir("generated/openapi")
 
 tasks.named<GenerateTask>("openApiGenerate") {

@@ -1,6 +1,8 @@
 package com.mikeflat.gateway.bootstrap.config;
 
+import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
+import com.mikeflat.gateway.domain.tenant.TenantRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -30,5 +32,10 @@ public class DomainConfiguration {
                 properties.limits().gold(),
                 settings.nearThresholdPercent());
         return settings;
+    }
+
+    @Bean
+    AdmissionPolicy admissionPolicy(TenantRegistry tenantRegistry) {
+        return new AdmissionPolicy(tenantRegistry);
     }
 }

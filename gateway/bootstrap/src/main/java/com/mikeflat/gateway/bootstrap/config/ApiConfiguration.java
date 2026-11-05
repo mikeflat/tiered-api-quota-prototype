@@ -1,6 +1,13 @@
 package com.mikeflat.gateway.bootstrap.config;
 
+import com.mikeflat.gateway.adapters.api.filter.QuotaFilter;
+import com.mikeflat.gateway.adapters.api.web.StubController;
+import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
+import jakarta.servlet.DispatcherType;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Wires the inbound adapter module ({@code :adapters:api}).
@@ -12,4 +19,21 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration(proxyBeanMethods = false)
 public class ApiConfiguration {
+
+    private static final String BUSINESS_PATHS = "/api/*";
+
+    @Bean
+    StubController stubController() {
+        return new StubController();
+    }
+
+    @Bean
+    FilterRegistrationBean<QuotaFilter> quotaFilterRegistration(
+            AdmitBusinessCall admitBusinessCall, JsonMapper jsonMapper) {
+        FilterRegistrationBean<QuotaFilter> registration =
+                new FilterRegistrationBean<>(new QuotaFilter(admitBusinessCall, jsonMapper));
+        registration.addUrlPatterns(BUSINESS_PATHS);
+        registration.setDispatcherTypes(DispatcherType.REQUEST);
+        return registration;
+    }
 }

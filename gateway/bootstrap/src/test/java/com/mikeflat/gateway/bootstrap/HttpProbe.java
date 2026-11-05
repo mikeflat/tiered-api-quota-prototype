@@ -6,6 +6,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Map;
 
 /** Sends plain requests with the JDK client, with no authentication headers. */
 final class HttpProbe {
@@ -18,10 +19,15 @@ final class HttpProbe {
     }
 
     static HttpResponse<String> get(int port, String path) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+        return get(port, path, Map.of());
+    }
+
+    static HttpResponse<String> get(int port, String path, Map<String, String> headers)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .timeout(Duration.ofSeconds(10))
-                .GET()
-                .build();
-        return CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+                .GET();
+        headers.forEach(request::header);
+        return CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 }

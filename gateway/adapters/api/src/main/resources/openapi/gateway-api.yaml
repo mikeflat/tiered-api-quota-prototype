@@ -1,8 +1,66 @@
 # Contract of the gateway's HTTP API. Interfaces and DTOs are generated from this file into
-# com.mikeflat.gateway.adapters.api.generated.{api,model}. Paths are added by later changes
-# (stub business endpoint, admin API).
+# com.mikeflat.gateway.adapters.api.generated.{api,model}. ProblemDetail is mapped to Spring's
+# own class and not generated. The admin API adds its paths in a later change.
 openapi: 3.0.3
 info:
   title: Quota gateway API
   version: 0.1.0
-paths: {}
+tags:
+  - name: Resource
+    description: Stubbed business resource behind the tenant guard
+paths:
+  /api/v1/resource:
+    get:
+      tags:
+        - Resource
+      operationId: getResource
+      summary: Return the fixed mock resource
+      parameters:
+        - name: X-Tenant-Id
+          in: header
+          required: true
+          description: Id of a tenant in the gateway's registry
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '200':
+          description: The mock payload, identical for every tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MockResource'
+        '400':
+          description: X-Tenant-Id is missing or does not identify a known tenant
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+components:
+  schemas:
+    MockResource:
+      type: object
+      required:
+        - id
+        - message
+      properties:
+        id:
+          type: string
+          example: mock-resource
+        message:
+          type: string
+          example: Served by the quota gateway stub
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string

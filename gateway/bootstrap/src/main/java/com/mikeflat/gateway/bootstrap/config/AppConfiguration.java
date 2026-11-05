@@ -1,6 +1,8 @@
 package com.mikeflat.gateway.bootstrap.config;
 
+import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
 import com.mikeflat.gateway.app.tenant.LoadTenantRegistry;
+import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
 import com.mikeflat.gateway.domain.tenant.TenantRegistry;
 import com.mikeflat.gateway.domain.tenant.TenantRepository;
 import com.mikeflat.gateway.domain.tenant.Tier;
@@ -38,5 +40,10 @@ public class AppConfiguration {
                 counts.get(Tier.GOLD),
                 loadTenantRegistry.sourceDescription());
         return registry;
+    }
+
+    @Bean
+    AdmitBusinessCall admitBusinessCall(AdmissionPolicy admissionPolicy) {
+        return new AdmitBusinessCall(admissionPolicy);
     }
 }

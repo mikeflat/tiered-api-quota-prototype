@@ -4,12 +4,13 @@ Spring Boot 4 service on Java 21, built with Gradle (Kotlin DSL). It will enforc
 fixed-window request quota by tier (Bronze/Silver/Gold) and host the admin API used by the
 dashboard. Requirements, architecture and backlog are in [`../docs`](../docs).
 
-**Current state: tenant registry and quota settings.** At startup the gateway loads the tenants
-from the shared `../config/tenants.json` into an in-memory registry and reads the quota settings
-(period, limit per tier, near threshold); it refuses to start if either is invalid. It answers
-`GET /actuator/health` and has no business or admin endpoint yet. Every other path returns `404`.
-The `X-Tenant-Id` guard, quota enforcement, the stub endpoint, the admin API and Redis usage
-recording are added by later backlog items.
+**Current state: stub business endpoint behind the tenant guard.** At startup the gateway loads
+the tenants from the shared `../config/tenants.json` into an in-memory registry and reads the
+quota settings (period, limit per tier, near threshold); it refuses to start if either is
+invalid. It answers `GET /actuator/health` and the stub business endpoint `GET /api/v1/resource`
+(see [Business API](#business-api)), which requires a known tenant in `X-Tenant-Id`. Every other
+path returns `404` (under `/api/` only after the tenant guard has passed). Quota enforcement, the
+admin API and Redis usage recording are added by later backlog items.
 
 ## Requirements
 
@@ -37,17 +38,17 @@ The modules map to the project's Clean Architecture layers like this:
 
 | Module (Gradle path) | Package | Clean Architecture layer | Content (now / later) |
 |---|---|---|---|
-| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings`); later: `QuotaPeriod`, blocked-set rules |
-| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`; later: tier change, usage recording use cases; ports for counters, metrics, clock |
-| `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | later: `QuotaFilter`, `StubController`, `AdminController` (subpackages `web`, `filter`) |
+| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings`, `AdmissionPolicy` with its `Admission` outcomes); later: `QuotaPeriod`, blocked-set rules in `AdmissionPolicy` |
+| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall`; later: tier change, usage recording use cases; ports for counters, metrics, clock |
+| `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | now: `filter.QuotaFilter` (tenant guard) with its `TenantIdHeader` parser, `web.StubController`; later: quota checks in `QuotaFilter`, `AdminController` |
 | `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | later: Redis record script, `MetricsSnapshotJob` reader (subpackage `redis`) |
 | `:adapters:persistence` | `com.mikeflat.gateway.adapters.persistence` | outbound adapters: data sources, one subpackage per storage technology | now: `file.JsonFileTenantRepository`; later: a `db` package if tenants move to a database |
 | `:bootstrap` | `com.mikeflat.gateway.bootstrap` | infrastructure / frameworks: main class, wiring | `GatewayApplication`, per-module `@Configuration` classes, `@ConfigurationProperties`, `TenantLoadFailureAnalyzer` |
 
 `adapters/` is only a folder that groups the adapter projects. It has no build logic.
 
-`adapters:api` and `adapters:infra` hold no classes yet. Each keeps its root package directory
-with a `.gitkeep` file. Delete the `.gitkeep` when the directory gets its first class. Empty
+`adapters:infra` holds no classes yet. It keeps its root package directory with a `.gitkeep`
+file. Delete the `.gitkeep` when the directory gets its first class. Empty
 modules still build (their `compileJava` is `NO-SOURCE`) and produce empty jars for `bootstrap`.
 Add tests to a module together with its first code: a `test` task with test sources but no
 discovered tests fails.
@@ -60,7 +61,7 @@ The gateway follows a DDD / hexagonal rule for ports:
 |---|---|---|---|
 | Repository of domain objects (loading/storing tenants, …) | the domain package of the aggregate it serves, with its exceptions | `:adapters:persistence` (one subpackage per storage technology) | `TenantRepository` → `JsonFileTenantRepository` |
 | Other outbound port (Redis usage recording and metrics, clock, other services) | `:app`, next to the use case that needs it | `:adapters:infra` | coming with usage recording |
-| Inbound port | `:app` use cases | called by `:adapters:api` (and by bootstrap at startup) | `LoadTenantRegistry` |
+| Inbound port | `:app` use cases | called by `:adapters:api` (and by bootstrap at startup) | `LoadTenantRegistry`, `AdmitBusinessCall` |
 
 So moving tenants to a database only adds a `db` package to `:adapters:persistence` and changes
 `PersistenceConfiguration`; the domain, use cases and other adapters stay untouched.
@@ -87,7 +88,7 @@ Two checks enforce these rules. The Gradle declarations stop disallowed imports 
 `bootstrap/src/test/.../ArchitectureTest.java` (ArchUnit) fails the build if a wrong dependency
 is added later.
 
-**Temporary setting:** while `adapters:api` and `adapters:infra` are empty, the rules about them
+**Temporary setting:** while `adapters:infra` is empty, the rules about it
 select no classes, which ArchUnit fails by default. `bootstrap/src/test/resources/archunit.properties`
 sets `archRule.failOnEmptyShould=false` so the rules pass now and take effect as soon as code
 lands. Remove that setting once every module has production classes, so a rule that silently
@@ -105,9 +106,9 @@ One exception: controllers and controller advice in `adapters:api` carry `@RestC
 
 | Module                 | Configuration class                                   | Beans now |
 |------------------------|-------------------------------------------------------|-----------|
-| `domain`               | `bootstrap/.../config/DomainConfiguration.java`       | `QuotaSettings` (from `QuotaProperties`) |
-| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry` |
-| `adapters:api`         | `bootstrap/.../config/ApiConfiguration.java`          | — |
+| `domain`               | `bootstrap/.../config/DomainConfiguration.java`       | `QuotaSettings` (from `QuotaProperties`), `AdmissionPolicy` (from `TenantRegistry`) |
+| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `AdmitBusinessCall` |
+| `adapters:api`         | `bootstrap/.../config/ApiConfiguration.java`          | `StubController`, `FilterRegistrationBean<QuotaFilter>` (URL pattern `/api/*`, `REQUEST` dispatches only) |
 | `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | — |
 | `adapters:persistence` | `bootstrap/.../config/PersistenceConfiguration.java`  | `TenantRepository` (`JsonFileTenantRepository`, from `TenantsProperties`) |
 
@@ -121,8 +122,41 @@ At build time, `openApiGenerate` (run before `compileJava`) generates interfaces
 `com.mikeflat.gateway.adapters.api.generated.model`, under `adapters/api/build/generated/openapi`.
 Generated code is not committed; controllers implement the generated interfaces.
 
-The spec is a stub with no paths for now, so nothing is generated. The stub business endpoint and
-the admin API add their paths to this file.
+The spec defines `GET /api/v1/resource` (tag `Resource`), which generates `ResourceApi` and the
+`MockResource` DTO. `ProblemDetail` is mapped to Spring's own class, so no model is generated for
+it. The admin API adds its paths to this file later.
+
+## Business API
+
+`GET /api/v1/resource` is the stubbed upstream. For a known tenant it returns `200` with
+`Content-Type: application/json` and always the same body:
+
+```json
+{"id":"mock-resource","message":"Served by the quota gateway stub"}
+```
+
+The body is identical for every tenant and tier, and the response carries no usage, limit or
+remaining-quota headers. `StubController` is the single place to replace with a real upstream.
+
+**Tenant guard.** Every request to a path under `/api/` (any method, including paths that do
+not exist) must carry `X-Tenant-Id` with the decimal id of a tenant in the in-memory registry.
+`QuotaFilter`, a servlet filter registered for `/api/*`, checks this before any controller runs,
+using only gateway memory (no Redis, no file read). The header is trusted, not authenticated.
+The value must be 1 to 18 ASCII digits naming a registered tenant (leading zeros are accepted);
+otherwise the gateway answers `400` with `Content-Type: application/problem+json`. The check
+is split by layer: `TenantIdHeader` (adapter) reads the header text, `AdmitBusinessCall` (use
+case) is what the filter calls, and `AdmissionPolicy` (domain) decides whether the tenant is
+admitted:
+
+```json
+{"type":"about:blank","title":"Bad Request","status":400,"detail":"Missing X-Tenant-Id header","instance":"/api/v1/resource"}
+```
+
+The `detail` is `Missing X-Tenant-Id header` when the header is absent or blank, and
+`X-Tenant-Id does not identify a known tenant` for any other value (malformed, `0`, negative,
+too long or not registered). The header value is never echoed in the body or logs. With a known
+tenant, an unknown path under `/api/` returns `404`. Paths outside `/api/` (`/actuator/health`,
+later the admin API, and look-alikes such as `/apix/...`) are not guarded.
 
 ## Configuration
 
@@ -146,7 +180,8 @@ Docker image sets it to `/config/tenants.json`. The quota defaults live in
 `bootstrap/src/main/resources/application.yaml` and are repeated in the root `docker-compose.yml`.
 
 **Tenants file format:** a JSON array of objects with an integer `id` (a JSON number, unique,
-1 or more, up to a Java `long`; sent later in `X-Tenant-Id`), a non-blank string `name` and a
+1 or more, up to a Java `long`; sent by clients in `X-Tenant-Id`, which accepts at most 18
+digits), a non-blank string `name` and a
 `tier` (`Bronze`, `Silver` or `Gold`, any letter case). Other fields are ignored. The file is
 read with Jackson data binding, with no type coercion: `"1"`, `1.5` or `true` as an id, or a
 number as a name, are rejected. Example entry: `{ "id": 1, "name": "Acme Corp", "tier": "Bronze" }`.
@@ -181,15 +216,18 @@ Run these from `gateway/`:
 ./gradlew build                      # compile, run all tests, build the jar
 ./gradlew test                       # all tests
 ./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings)
-./gradlew :app:test                  # use case tests
+./gradlew :app:test                  # use case tests (tenant loading, request admission)
+./gradlew :adapters:api:test         # tenant guard filter, problem body and stub controller tests
 ./gradlew :adapters:persistence:test # tenants file adapter tests
-./gradlew :bootstrap:test            # configuration, startup, health, port and architecture tests
+./gradlew :bootstrap:test            # configuration, startup, health, business endpoint, port and architecture tests
 ./gradlew :adapters:api:compileJava  # generate from the OpenAPI spec, compile
 ./gradlew :bootstrap:bootRun         # run from source on port 8080 (Redis not needed)
 java -jar bootstrap/build/libs/gateway.jar                    # run the built jar (reads ../config/tenants.json)
 SERVER_PORT=9090 java -jar bootstrap/build/libs/gateway.jar   # run on another port
 QUOTA_PERIOD_SECONDS=30 java -jar bootstrap/build/libs/gateway.jar   # override a quota setting
 curl -i http://localhost:8080/actuator/health
+curl -i -H "X-Tenant-Id: 1" http://localhost:8080/api/v1/resource   # 200 with the mock payload
+curl -i http://localhost:8080/api/v1/resource                        # 400 problem body
 ```
 
 `./gradlew build` produces one executable artifact: `bootstrap/build/libs/gateway.jar`.

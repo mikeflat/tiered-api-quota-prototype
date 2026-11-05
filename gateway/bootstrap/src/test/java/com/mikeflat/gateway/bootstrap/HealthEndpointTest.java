@@ -39,9 +39,8 @@ class HealthEndpointTest {
         assertThat(HttpProbe.get(port, "/actuator/beans").statusCode()).isEqualTo(404);
     }
 
-    /** No business endpoint exists yet; the stub endpoint arrives with a later change. */
     @Test
-    void unknown_api_path_is_not_found() throws Exception {
-        assertThat(HttpProbe.get(port, "/api/v1/resource").statusCode()).isEqualTo(404);
+    void path_that_does_not_exist_yet_is_not_found() throws Exception {
+        assertThat(HttpProbe.get(port, "/admin/snapshot").statusCode()).isEqualTo(404);
     }
 }
