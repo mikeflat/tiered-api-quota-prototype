@@ -21,10 +21,12 @@ class UsageRecorderTest {
     };
 
     private final RecordingCounter counter = new RecordingCounter();
+    private final List<RecordedUsage> notified = new ArrayList<>();
+    private final RecordedUsageListener listener = (event, used) -> notified.add(new RecordedUsage(event, used));
 
     @Test
     void submitted_event_is_recorded_and_counted() {
-        UsageRecorder recorder = new UsageRecorder(counter, DIRECT);
+        UsageRecorder recorder = new UsageRecorder(counter, DIRECT, listener);
 
         recorder.submit(allowed(1));
 
@@ -34,7 +36,7 @@ class UsageRecorderTest {
 
     @Test
     void rejected_submission_is_dropped_and_counted() {
-        UsageRecorder recorder = new UsageRecorder(counter, ALWAYS_FULL);
+        UsageRecorder recorder = new UsageRecorder(counter, ALWAYS_FULL, listener);
 
         recorder.submit(allowed(1));
         recorder.submit(allowed(2));
@@ -45,7 +47,7 @@ class UsageRecorderTest {
 
     @Test
     void rejected_submission_does_not_throw() {
-        UsageRecorder recorder = new UsageRecorder(counter, ALWAYS_FULL);
+        UsageRecorder recorder = new UsageRecorder(counter, ALWAYS_FULL, listener);
 
         assertThatCode(() -> recorder.submit(allowed(1))).doesNotThrowAnyException();
     }
@@ -53,7 +55,7 @@ class UsageRecorderTest {
     @Test
     void failed_record_is_counted_and_next_event_still_recorded() {
         counter.failFor(allowed(1));
-        UsageRecorder recorder = new UsageRecorder(counter, DIRECT);
+        UsageRecorder recorder = new UsageRecorder(counter, DIRECT, listener);
 
         recorder.submit(allowed(1));
         recorder.submit(allowed(2));
@@ -65,14 +67,14 @@ class UsageRecorderTest {
     @Test
     void failed_record_does_not_reach_the_submitter() {
         counter.failFor(allowed(1));
-        UsageRecorder recorder = new UsageRecorder(counter, DIRECT);
+        UsageRecorder recorder = new UsageRecorder(counter, DIRECT, listener);
 
         assertThatCode(() -> recorder.submit(allowed(1))).doesNotThrowAnyException();
     }
 
     @Test
     void events_are_recorded_in_submission_order() {
-        UsageRecorder recorder = new UsageRecorder(counter, DIRECT);
+        UsageRecorder recorder = new UsageRecorder(counter, DIRECT, listener);
 
         recorder.submit(allowed(3));
         recorder.submit(allowed(1));
@@ -83,7 +85,30 @@ class UsageRecorderTest {
 
     @Test
     void new_recorder_has_zero_stats() {
-        assertThat(new UsageRecorder(counter, DIRECT).stats()).isEqualTo(new UsageRecordingStats(0, 0, 0));
+        assertThat(new UsageRecorder(counter, DIRECT, listener).stats()).isEqualTo(new UsageRecordingStats(0, 0, 0));
+    }
+
+    @Test
+    void listener_receives_event_and_used_after_record() {
+        UsageRecorder recorder = new UsageRecorder(counter, DIRECT, listener);
+
+        recorder.submit(allowed(1));
+        recorder.submit(allowed(2));
+
+        assertThat(notified).containsExactly(new RecordedUsage(allowed(1), 1), new RecordedUsage(allowed(2), 2));
+    }
+
+    @Test
+    void listener_is_not_called_when_record_fails() {
+        counter.failFor(allowed(1));
+        UsageRecorder recorder = new UsageRecorder(counter, DIRECT, listener);
+
+        recorder.submit(allowed(1));
+
+        assertThat(notified).isEmpty();
+    }
+
+    private record RecordedUsage(UsageEvent event, long used) {
     }
 
     private static UsageEvent allowed(long tenantId) {

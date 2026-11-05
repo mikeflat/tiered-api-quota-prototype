@@ -1,6 +1,7 @@
 package com.mikeflat.gateway.bootstrap.config;
 
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
+import com.mikeflat.gateway.domain.quota.BlockedTenants;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import com.mikeflat.gateway.domain.tenant.TenantRegistry;
 import org.slf4j.Logger;
@@ -35,7 +36,13 @@ public class DomainConfiguration {
     }
 
     @Bean
-    AdmissionPolicy admissionPolicy(TenantRegistry tenantRegistry) {
-        return new AdmissionPolicy(tenantRegistry);
+    BlockedTenants blockedTenants() {
+        return new BlockedTenants();
+    }
+
+    @Bean
+    AdmissionPolicy admissionPolicy(
+            TenantRegistry tenantRegistry, BlockedTenants blockedTenants, QuotaSettings quotaSettings) {
+        return new AdmissionPolicy(tenantRegistry, blockedTenants, quotaSettings);
     }
 }

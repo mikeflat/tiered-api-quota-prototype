@@ -28,6 +28,13 @@ class UsageEventTest {
     }
 
     @Test
+    void rejected_event_captures_period_and_second() {
+        UsageEvent event = UsageEvent.rejectedAt(ACME, Instant.ofEpochSecond(1_800_000_030L), SIXTY_SECOND_PERIOD);
+
+        assertThat(event).isEqualTo(new UsageEvent(1, UsageOutcome.REJECTED, 30_000_000L, 1_800_000_030L));
+    }
+
+    @Test
     void event_at_boundary_belongs_to_next_period() {
         UsageEvent event = UsageEvent.allowedAt(ACME, Instant.ofEpochSecond(1_800_000_060L), SIXTY_SECOND_PERIOD);
 

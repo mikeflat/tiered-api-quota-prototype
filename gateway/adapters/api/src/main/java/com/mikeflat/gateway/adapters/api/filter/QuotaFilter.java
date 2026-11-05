@@ -7,6 +7,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.json.JsonMapper;
@@ -16,6 +17,7 @@ public final class QuotaFilter extends OncePerRequestFilter {
     public static final String TENANT_ID_HEADER = "X-Tenant-Id";
     static final String TENANT_MISSING_DETAIL = "Missing X-Tenant-Id header";
     static final String TENANT_UNKNOWN_DETAIL = "X-Tenant-Id does not identify a known tenant";
+    static final String QUOTA_EXHAUSTED_DETAIL = "Quota for the current period is exhausted";
 
     private final AdmitBusinessCall admitBusinessCall;
     private final ProblemResponseWriter problemWriter;
@@ -39,8 +41,15 @@ public final class QuotaFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         switch (admitBusinessCall.admit(tenantId)) {
             case Admission.Admitted admitted -> chain.doFilter(request, response);
+            case Admission.Blocked blocked -> rejectAsQuotaExhausted(request, response, blocked.retryAfterSeconds());
             case Admission.TenantUnknown unknown -> rejectAsBadRequest(request, response, TENANT_UNKNOWN_DETAIL);
         }
+    }
+
+    private void rejectAsQuotaExhausted(HttpServletRequest request, HttpServletResponse response, long retryAfterSeconds)
+            throws IOException {
+        response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterSeconds));
+        problemWriter.write(response, HttpStatus.TOO_MANY_REQUESTS, QUOTA_EXHAUSTED_DETAIL, request.getRequestURI());
     }
 
     private void rejectAsBadRequest(HttpServletRequest request, HttpServletResponse response, String detail)

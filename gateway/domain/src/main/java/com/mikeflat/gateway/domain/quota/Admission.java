@@ -7,6 +7,9 @@ public sealed interface Admission {
     record Admitted(Tenant tenant) implements Admission {
     }
 
+    record Blocked(Tenant tenant, long retryAfterSeconds) implements Admission {
+    }
+
     record TenantUnknown() implements Admission {
     }
 }

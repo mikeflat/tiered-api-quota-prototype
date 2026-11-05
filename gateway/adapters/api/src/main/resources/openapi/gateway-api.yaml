@@ -37,6 +37,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+        '429':
+          description: The tenant's quota for the current period is exhausted
+          headers:
+            Retry-After:
+              description: Whole seconds until the next period boundary, at least 1
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
 components:
   schemas:
     MockResource:

@@ -6,6 +6,7 @@ import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import com.mikeflat.gateway.domain.quota.UsageEvent;
 import java.time.Clock;
+import java.time.Instant;
 
 public final class AdmitBusinessCall {
 
@@ -23,9 +24,15 @@ public final class AdmitBusinessCall {
     }
 
     public Admission admit(long tenantId) {
-        Admission admission = policy.admit(tenantId);
-        if (admission instanceof Admission.Admitted(var tenant)) {
-            usageRecorder.submit(UsageEvent.allowedAt(tenant, clock.instant(), settings));
+        Instant arrival = clock.instant();
+        Admission admission = policy.admit(tenantId, arrival.getEpochSecond());
+        switch (admission) {
+            case Admission.Admitted admitted ->
+                    usageRecorder.submit(UsageEvent.allowedAt(admitted.tenant(), arrival, settings));
+            case Admission.Blocked blocked ->
+                    usageRecorder.submit(UsageEvent.rejectedAt(blocked.tenant(), arrival, settings));
+            case Admission.TenantUnknown unknown -> {
+            }
         }
         return admission;
     }

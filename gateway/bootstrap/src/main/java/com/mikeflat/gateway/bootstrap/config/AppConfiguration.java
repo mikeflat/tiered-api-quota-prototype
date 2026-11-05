@@ -1,10 +1,12 @@
 package com.mikeflat.gateway.bootstrap.config;
 
 import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
+import com.mikeflat.gateway.app.quota.BlockTenantsOverLimit;
 import com.mikeflat.gateway.app.tenant.LoadTenantRegistry;
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
+import com.mikeflat.gateway.domain.quota.BlockedTenants;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import com.mikeflat.gateway.domain.tenant.TenantRegistry;
 import com.mikeflat.gateway.domain.tenant.TenantRepository;
@@ -53,8 +55,15 @@ public class AppConfiguration {
     }
 
     @Bean
-    UsageRecorder usageRecorder(UsageCounter usageCounter, Executor usageWriterExecutor) {
-        return new UsageRecorder(usageCounter, usageWriterExecutor);
+    BlockTenantsOverLimit blockTenantsOverLimit(
+            TenantRegistry tenantRegistry, QuotaSettings quotaSettings, BlockedTenants blockedTenants, Clock clock) {
+        return new BlockTenantsOverLimit(tenantRegistry, quotaSettings, blockedTenants, clock);
+    }
+
+    @Bean
+    UsageRecorder usageRecorder(
+            UsageCounter usageCounter, Executor usageWriterExecutor, BlockTenantsOverLimit blockTenantsOverLimit) {
+        return new UsageRecorder(usageCounter, usageWriterExecutor, blockTenantsOverLimit);
     }
 
     @Bean

@@ -180,6 +180,33 @@ class QuotaSettingsTest {
     }
 
     @Test
+    void seconds_until_next_period_in_middle_of_period() {
+        assertThat(defaults.secondsUntilNextPeriod(1_800_000_030L)).isEqualTo(30);
+    }
+
+    @Test
+    void seconds_until_next_period_in_last_second_is_one() {
+        assertThat(defaults.secondsUntilNextPeriod(1_800_000_059L)).isEqualTo(1);
+    }
+
+    @Test
+    void seconds_until_next_period_on_boundary_is_whole_period() {
+        assertThat(defaults.secondsUntilNextPeriod(1_800_000_060L)).isEqualTo(60);
+    }
+
+    @Test
+    void used_equal_to_limit_reaches_limit() {
+        assertThat(defaults.reachesLimit(Tier.BRONZE, 100)).isTrue();
+        assertThat(defaults.reachesLimit(Tier.BRONZE, 101)).isTrue();
+    }
+
+    @Test
+    void used_below_limit_does_not_reach_limit() {
+        assertThat(defaults.reachesLimit(Tier.BRONZE, 99)).isFalse();
+        assertThat(defaults.reachesLimit(Tier.SILVER, 100)).isFalse();
+    }
+
+    @Test
     void near_boundary_overflow_rejected() {
         assertThatThrownBy(() -> defaults.nearBoundary(Long.MAX_VALUE))
                 .isInstanceOf(ArithmeticException.class);

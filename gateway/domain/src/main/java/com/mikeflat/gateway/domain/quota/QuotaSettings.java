@@ -49,8 +49,17 @@ public record QuotaSettings(Duration period, Map<Tier, Long> limits, int nearThr
         return Math.floorDiv(epochSecond, periodSeconds());
     }
 
+    public long secondsUntilNextPeriod(long epochSecond) {
+        long nextPeriodStart = Math.multiplyExact(periodIndexAt(epochSecond) + 1, periodSeconds());
+        return nextPeriodStart - epochSecond;
+    }
+
     public long limitOf(Tier tier) {
         return limits.get(tier);
+    }
+
+    public boolean reachesLimit(Tier tier, long used) {
+        return used >= limitOf(tier);
     }
 
     public long nearBoundary(long limit) {

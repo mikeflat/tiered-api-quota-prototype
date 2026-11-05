@@ -9,13 +9,15 @@ public final class UsageRecorder {
 
     private final UsageCounter counter;
     private final Executor writer;
+    private final RecordedUsageListener listener;
     private final LongAdder recorded = new LongAdder();
     private final LongAdder dropped = new LongAdder();
     private final LongAdder failed = new LongAdder();
 
-    public UsageRecorder(UsageCounter counter, Executor writer) {
+    public UsageRecorder(UsageCounter counter, Executor writer, RecordedUsageListener listener) {
         this.counter = counter;
         this.writer = writer;
+        this.listener = listener;
     }
 
     public void submit(UsageEvent event) {
@@ -31,11 +33,14 @@ public final class UsageRecorder {
     }
 
     private void apply(UsageEvent event) {
+        long used;
         try {
-            counter.record(event);
-            recorded.increment();
+            used = counter.record(event);
         } catch (UsageRecordingFailedException redisUnavailable) {
             failed.increment();
+            return;
         }
+        recorded.increment();
+        listener.usageRecorded(event, used);
     }
 }

@@ -23,7 +23,8 @@ class UsageWriterExecutorTest {
 
     private final BlockingCounter counter = new BlockingCounter();
     private final ThreadPoolExecutor executor = UsageWriterExecutor.create(2);
-    private final UsageRecorder recorder = new UsageRecorder(counter, executor);
+    private final UsageRecorder recorder = new UsageRecorder(counter, executor, (event, used) -> {
+    });
 
     @AfterEach
     void stopWriter() {

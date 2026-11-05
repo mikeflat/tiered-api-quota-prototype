@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.Admission;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
+import com.mikeflat.gateway.domain.quota.BlockedTenants;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import com.mikeflat.gateway.domain.quota.UsageEvent;
 import com.mikeflat.gateway.domain.quota.UsageOutcome;
@@ -27,8 +28,10 @@ class AdmitBusinessCallTest {
             Duration.ofSeconds(60),
             Map.of(Tier.BRONZE, 100L, Tier.SILVER, 1_000L, Tier.GOLD, 10_000L),
             80);
+    private static final long PERIOD = 30_000_000L;
 
     private final List<UsageEvent> recordedEvents = new ArrayList<>();
+    private final BlockedTenants blockedTenants = new BlockedTenants();
 
     private AdmitBusinessCall admitBusinessCallAt(long epochSecond) {
         UsageRecorder recorder = new UsageRecorder(
@@ -36,9 +39,11 @@ class AdmitBusinessCallTest {
                     recordedEvents.add(event);
                     return recordedEvents.size();
                 },
-                Runnable::run);
+                Runnable::run,
+                (event, used) -> {
+                });
         return new AdmitBusinessCall(
-                new AdmissionPolicy(new TenantRegistry(List.of(ACME))),
+                new AdmissionPolicy(new TenantRegistry(List.of(ACME)), blockedTenants, SIXTY_SECOND_PERIOD),
                 recorder,
                 SIXTY_SECOND_PERIOD,
                 Clock.fixed(Instant.ofEpochSecond(epochSecond), ZoneOffset.UTC));
@@ -59,7 +64,7 @@ class AdmitBusinessCallTest {
         admitBusinessCallAt(1_800_000_030L).admit(1);
 
         assertThat(recordedEvents)
-                .containsExactly(new UsageEvent(1, UsageOutcome.ALLOWED, 30_000_000L, 1_800_000_030L));
+                .containsExactly(new UsageEvent(1, UsageOutcome.ALLOWED, PERIOD, 1_800_000_030L));
     }
 
     @Test
@@ -68,7 +73,7 @@ class AdmitBusinessCallTest {
 
         assertThat(recordedEvents).singleElement()
                 .extracting(UsageEvent::periodIndex)
-                .isEqualTo(30_000_001L);
+                .isEqualTo(PERIOD + 1);
     }
 
     @Test
@@ -86,5 +91,23 @@ class AdmitBusinessCallTest {
         admitBusinessCallAt(1_800_000_030L).admit(2);
 
         assertThat(recordedEvents).isEmpty();
+    }
+
+    @Test
+    void blocked_call_submits_rejected_event_for_current_period() {
+        blockedTenants.block(1, PERIOD);
+
+        admitBusinessCallAt(1_800_000_030L).admit(1);
+
+        assertThat(recordedEvents)
+                .containsExactly(new UsageEvent(1, UsageOutcome.REJECTED, PERIOD, 1_800_000_030L));
+    }
+
+    @Test
+    void blocked_call_returns_retry_after_to_next_boundary() {
+        blockedTenants.block(1, PERIOD);
+
+        assertThat(admitBusinessCallAt(1_800_000_030L).admit(1)).isEqualTo(new Admission.Blocked(ACME, 30));
+        assertThat(admitBusinessCallAt(1_800_000_059L).admit(1)).isEqualTo(new Admission.Blocked(ACME, 1));
     }
 }

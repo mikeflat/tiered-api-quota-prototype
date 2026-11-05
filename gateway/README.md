@@ -4,16 +4,18 @@ Spring Boot 4 service on Java 21, built with Gradle (Kotlin DSL). It will enforc
 fixed-window request quota by tier (Bronze/Silver/Gold) and host the admin API used by the
 dashboard. Requirements, architecture and backlog are in [`../docs`](../docs).
 
-**Current state: stub business endpoint behind the tenant guard, usage counted in Redis.** At
+**Current state: stub business endpoint behind the tenant guard, usage counted in Redis, quota
+enforced.** At
 startup the gateway loads the tenants from the shared `../config/tenants.json` into an in-memory
 registry and reads the quota settings (period, limit per tier, near threshold); it refuses to
 start if either is invalid. It answers `GET /actuator/health` and the stub business endpoint
 `GET /api/v1/resource` (see [Business API](#business-api)), which requires a known tenant in
 `X-Tenant-Id`. Every other path returns `404` (under `/api/` only after the tenant guard has
 passed). Every admitted business request is counted per tenant and period in Redis,
-asynchronously and off the request path (see [Usage recording](#usage-recording)). Nothing is
-enforced yet: every known tenant still gets `200`. Quota enforcement and the admin API are added
-by later backlog items.
+asynchronously and off the request path (see [Usage recording](#usage-recording)). Once a
+tenant's recorded usage reaches its tier's limit, its requests get `429 Too Many Requests` with
+`Retry-After` until the period ends (see [Quota enforcement](#quota-enforcement)). The admin API
+is added by a later backlog item.
 
 ## Requirements
 
@@ -42,9 +44,9 @@ The modules map to the project's Clean Architecture layers like this:
 
 | Module (Gradle path) | Package | Clean Architecture layer | Content (now / later) |
 |---|---|---|---|
-| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings` with `periodIndexAt`, `AdmissionPolicy` with its `Admission` outcomes, `UsageEvent`, `UsageOutcome`); later: seconds to the period boundary, blocked-set rules in `AdmissionPolicy` |
-| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed usage event for each admitted call), `usage.UsageRecorder` (hands events to the writer executor, applies them through the port, counts recorded, dropped and failed events), `usage.UsageCounter` port with `UsageRecordingFailedException`; later: tier change use case, blocked-set decision in `UsageRecorder`, metrics ports |
-| `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | now: `filter.QuotaFilter` (tenant guard) with its `TenantIdHeader` parser, `web.StubController`; later: quota checks in `QuotaFilter`, `AdminController` |
+| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings` with `periodIndexAt`, `secondsUntilNextPeriod` and `reachesLimit`, `BlockedTenants` (the per-period blocked set), `AdmissionPolicy` with its `Admission` outcomes `Admitted`, `Blocked` (with `retryAfterSeconds`) and `TenantUnknown`, `UsageEvent` (`allowedAt`, `rejectedAt`), `UsageOutcome`); later: unblocking on a tier change |
+| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed event for each admitted call and a rejected event for each blocked call), `quota.BlockTenantsOverLimit` (run by the writer after each recorded event; blocks a tenant whose `used` reaches its current limit), `usage.UsageRecorder` (hands events to the writer executor, applies them through the port, passes the returned `used` to its `RecordedUsageListener`, counts recorded, dropped and failed events), `usage.RecordedUsageListener`, `usage.UsageCounter` port with `UsageRecordingFailedException`; later: tier change use case, metrics ports |
+| `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | now: `filter.QuotaFilter` (tenant guard and `429` for blocked tenants) with its `TenantIdHeader` parser, `web.StubController`; later: `AdminController` |
 | `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | now: `redis.RedisUsageCounter` (implements `UsageCounter`) and the `redis/record-usage.lua` script resource; later: global metrics in the script, `MetricsSnapshotJob` reader |
 | `:adapters:persistence` | `com.mikeflat.gateway.adapters.persistence` | outbound adapters: data sources, one subpackage per storage technology | now: `file.JsonFileTenantRepository`; later: a `db` package if tenants move to a database |
 | `:bootstrap` | `com.mikeflat.gateway.bootstrap` | infrastructure / frameworks: main class, wiring | `GatewayApplication`, per-module `@Configuration` classes, `@ConfigurationProperties`, `TenantLoadFailureAnalyzer`, `config.UsageWriterExecutor` (the single-thread usage writer with its bounded queue) |
@@ -108,8 +110,8 @@ One exception: controllers and controller advice in `adapters:api` carry `@RestC
 
 | Module                 | Configuration class                                   | Beans now |
 |------------------------|-------------------------------------------------------|-----------|
-| `domain`               | `bootstrap/.../config/DomainConfiguration.java`       | `QuotaSettings` (from `QuotaProperties`), `AdmissionPolicy` (from `TenantRegistry`) |
-| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `UsageRecorder` (with the writer executor), `AdmitBusinessCall` |
+| `domain`               | `bootstrap/.../config/DomainConfiguration.java`       | `QuotaSettings` (from `QuotaProperties`), `BlockedTenants`, `AdmissionPolicy` (from `TenantRegistry`, `BlockedTenants`, `QuotaSettings`) |
+| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `BlockTenantsOverLimit`, `UsageRecorder` (with the writer executor and `BlockTenantsOverLimit` as its listener), `AdmitBusinessCall` |
 | `adapters:api`         | `bootstrap/.../config/ApiConfiguration.java`          | `StubController`, `FilterRegistrationBean<QuotaFilter>` (URL pattern `/api/*`, `REQUEST` dispatches only) |
 | `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | `RedisScript<Long>` (`redis/record-usage.lua`), `UsageCounter` (`RedisUsageCounter`, key TTL two periods), `usageWriterExecutor` (from `UsageRecordingProperties`, destroyed with `shutdownNow`) |
 | `adapters:persistence` | `bootstrap/.../config/PersistenceConfiguration.java`  | `TenantRepository` (`JsonFileTenantRepository`, from `TenantsProperties`) |
@@ -124,8 +126,8 @@ At build time, `openApiGenerate` (run before `compileJava`) generates interfaces
 `com.mikeflat.gateway.adapters.api.generated.model`, under `adapters/api/build/generated/openapi`.
 Generated code is not committed; controllers implement the generated interfaces.
 
-The spec defines `GET /api/v1/resource` (tag `Resource`), which generates `ResourceApi` and the
-`MockResource` DTO. `ProblemDetail` is mapped to Spring's own class, so no model is generated for
+The spec defines `GET /api/v1/resource` (tag `Resource`) with its `200`, `400` and `429`
+(with `Retry-After`) responses, which generates `ResourceApi` and the `MockResource` DTO. `ProblemDetail` is mapped to Spring's own class, so no model is generated for
 it. The admin API adds its paths to this file later.
 
 ## Business API
@@ -160,10 +162,45 @@ too long or not registered). The header value is never echoed in the body or log
 tenant, an unknown path under `/api/` returns `404`. Paths outside `/api/` (`/actuator/health`,
 later the admin API, and look-alikes such as `/apix/...`) are not guarded.
 
+**Quota exhausted.** A known tenant that is blocked for the current period gets `429 Too Many
+Requests` from `QuotaFilter`, before any controller runs. `Retry-After` holds the whole seconds
+until the next period boundary (`(p + 1) × QUOTA_PERIOD_SECONDS − epochSecond`, `1` to
+`QUOTA_PERIOD_SECONDS`). The body is the same problem shape, with no used, limit or remaining
+values, and no rate-limit headers are sent:
+
+```json
+{"type":"about:blank","title":"Too Many Requests","status":429,"detail":"Quota for the current period is exhausted","instance":"/api/v1/resource"}
+```
+
+## Quota enforcement
+
+The quota decision on the request thread is in memory only: one registry lookup and one lookup
+in `BlockedTenants`, with no Redis call.
+
+- **Blocked set per period.** `BlockedTenants` holds the tenants known to be over their limit,
+  tied to one period index. A lookup only matches the current period index, so at the boundary
+  every tenant is served again without a reset job; the old set is replaced on the first block
+  of the new period, and a block for an older period is ignored.
+- **The writer blocks.** After each recorded allowed event, `BlockTenantsOverLimit` compares the
+  `used` returned by the record script with the limit of the tenant's tier at that moment. At
+  `used ≥ limit`, and only if the event's period is still the current one, the tenant is added
+  to the blocked set. Rejected events and late events of a past period never block.
+- **Rejections are counted, not used.** A `429` produces a rejected usage event, so
+  `quota:rejected:{tenantId}:{p}` grows and `quota:used:{tenantId}:{p}` does not.
+- **Bounded overshoot.** Requests arriving between the one that reaches the limit and the writer
+  applying its event are still served, so `used` can end above the limit. The overshoot is the
+  tenant's events still waiting in the writer queue; once the writer applies the event reaching
+  the limit, every later request in that period gets `429`.
+- **Empty after a restart.** The blocked set lives only in gateway memory. After a restart a
+  tenant over its limit is served until the writer records its next allowed event, which blocks
+  it again (accepted limitation).
+- **Redis down.** Tenants already blocked keep getting `429` while Redis is unreachable, until
+  the period ends; nothing is recorded then, so no tenant is newly blocked.
+
 ## Usage recording
 
 Every business request that passes the tenant guard produces one usage event: tenant id, outcome
-(`allowed`; `rejected` starts with quota enforcement), the period index
+(`allowed` when served, `rejected` when answered `429`), the period index
 `p = floor(epochSeconds / QUOTA_PERIOD_SECONDS)` and the epoch second, all read from the clock
 when the request arrives. Requests rejected by the guard (`400`) produce no event.
 
@@ -177,7 +214,8 @@ when the request arrives. Requests rejected by the guard (`400`) produce no even
 - **One writer, one Redis call per event.** The daemon thread `usage-writer` applies events in
   order, each with one call of `redis/record-usage.lua` (`EVALSHA`, falling back to `EVAL` when
   Redis has lost its script cache). The script returns the tenant's `used` for the event's
-  period (not used yet; quota enforcement compares it with the limit).
+  period, which `BlockTenantsOverLimit` compares with the limit (see
+  [Quota enforcement](#quota-enforcement)).
 - **Redis failures.** A failed or timed-out call (`SPRING_DATA_REDIS_TIMEOUT`, default `1s`)
   discards the event and grows the failed count; the writer continues with the next event and
   never retries. Once Redis is back, later events are counted without a restart.
@@ -262,12 +300,12 @@ Run these from `gateway/`:
 ```bash
 ./gradlew build                      # compile, run all tests, build the jar
 ./gradlew test                       # all tests
-./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings, usage events)
-./gradlew :app:test                  # use case tests (tenant loading, request admission, usage recorder)
-./gradlew :adapters:api:test         # tenant guard filter, problem body and stub controller tests
+./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings, usage events, blocked set, admission policy)
+./gradlew :app:test                  # use case tests (tenant loading, request admission, blocking over the limit, overshoot, usage recorder)
+./gradlew :adapters:api:test         # tenant guard and 429 filter, problem body and stub controller tests
 ./gradlew :adapters:infra:test       # Redis usage counter and record script (Testcontainers Redis)
 ./gradlew :adapters:persistence:test # tenants file adapter tests
-./gradlew :bootstrap:test            # configuration, startup, health, business endpoint, usage writer, usage recording with and without Redis, port and architecture tests
+./gradlew :bootstrap:test            # configuration, startup, health, business endpoint, usage writer, usage recording with and without Redis, quota enforcement (incl. Redis down), port and architecture tests
 ./gradlew :adapters:api:compileJava  # generate from the OpenAPI spec, compile
 ./gradlew :bootstrap:bootRun         # run from source on port 8080 (Redis not needed)
 java -jar bootstrap/build/libs/gateway.jar                    # run the built jar (reads ../config/tenants.json)

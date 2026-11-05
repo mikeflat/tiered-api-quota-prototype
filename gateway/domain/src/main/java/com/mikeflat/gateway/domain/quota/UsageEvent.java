@@ -18,7 +18,15 @@ public record UsageEvent(long tenantId, UsageOutcome outcome, long periodIndex, 
     }
 
     public static UsageEvent allowedAt(Tenant tenant, Instant arrival, QuotaSettings settings) {
+        return at(tenant, UsageOutcome.ALLOWED, arrival, settings);
+    }
+
+    public static UsageEvent rejectedAt(Tenant tenant, Instant arrival, QuotaSettings settings) {
+        return at(tenant, UsageOutcome.REJECTED, arrival, settings);
+    }
+
+    private static UsageEvent at(Tenant tenant, UsageOutcome outcome, Instant arrival, QuotaSettings settings) {
         long epochSecond = arrival.getEpochSecond();
-        return new UsageEvent(tenant.id(), UsageOutcome.ALLOWED, settings.periodIndexAt(epochSecond), epochSecond);
+        return new UsageEvent(tenant.id(), outcome, settings.periodIndexAt(epochSecond), epochSecond);
     }
 }
