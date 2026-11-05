@@ -10,14 +10,18 @@ public final class UsageRecorder {
     private final UsageCounter counter;
     private final Executor writer;
     private final RecordedUsageListener listener;
+    private final UsageRecordingAlerts alerts;
+    private final RecordingOutage outage = new RecordingOutage();
     private final LongAdder recorded = new LongAdder();
     private final LongAdder dropped = new LongAdder();
     private final LongAdder failed = new LongAdder();
 
-    public UsageRecorder(UsageCounter counter, Executor writer, RecordedUsageListener listener) {
+    public UsageRecorder(
+            UsageCounter counter, Executor writer, RecordedUsageListener listener, UsageRecordingAlerts alerts) {
         this.counter = counter;
         this.writer = writer;
         this.listener = listener;
+        this.alerts = alerts;
     }
 
     public void submit(UsageEvent event) {
@@ -38,9 +42,15 @@ public final class UsageRecorder {
             used = counter.record(event);
         } catch (UsageRecordingFailedException redisUnavailable) {
             failed.increment();
+            if (outage.failed()) {
+                alerts.recordingFailing(redisUnavailable);
+            }
             return;
         }
         recorded.increment();
+        if (outage.succeeded()) {
+            alerts.recordingResumed();
+        }
         listener.usageRecorded(event, used);
     }
 }

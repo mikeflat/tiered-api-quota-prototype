@@ -108,7 +108,7 @@ class BusinessEndpointTest {
 
     @Test
     void health_needs_no_tenant_header() throws Exception {
-        assertThat(HttpProbe.get(port, "/actuator/health").statusCode()).isEqualTo(200);
+        assertThat(HttpProbe.get(port, "/actuator/health/liveness").statusCode()).isEqualTo(200);
     }
 
     private HttpResponse<String> getAs(String tenantId, String path) throws Exception {

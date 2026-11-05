@@ -98,11 +98,13 @@ For each of `redis`, `gateway` and `generator`, a `start-<component>` and a `sto
 #### Scenario: Redis outage while the gateway keeps serving
 - **WHEN** the stack is running and the operator runs `stop-redis`
 - **THEN** the Redis container is stopped and the gateway, dashboard and generator keep running
-- **AND** `GET http://localhost:8080/actuator/health` still returns `200` with `"status":"UP"` (NFR-4)
+- **AND** `GET http://localhost:8080/actuator/health/liveness` still returns `200` with `"status":"UP"` and the gateway container stays `healthy` (NFR-4)
+- **AND** `GET http://localhost:8080/actuator/health` and `GET http://localhost:3000/actuator/health` return `503` with `"status":"DOWN"` and Redis `DOWN` (FR-17)
 
 #### Scenario: Redis comes back
 - **WHEN** Redis was stopped with `stop-redis` and the operator runs `start-redis`
 - **THEN** Redis is running and answers `PONG`, and no other container was restarted
+- **AND** within a few seconds `GET http://localhost:8080/actuator/health` returns `200` with `"status":"UP"` again
 
 #### Scenario: Gateway outage
 - **WHEN** the stack is running and the operator runs `stop-gateway`
@@ -117,7 +119,7 @@ For each of `redis`, `gateway` and `generator`, a `start-<component>` and a `sto
 
 #### Scenario: Component started alone
 - **WHEN** no container of the stack exists and the operator runs `start-gateway`
-- **THEN** only the gateway container is started, and it reports `"status":"UP"` without Redis
+- **THEN** only the gateway container is started, the script returns once the container is healthy, and `GET http://localhost:8080/actuator/health/liveness` reports `"status":"UP"` without Redis
 
 #### Scenario: Generator stopped and started
 - **WHEN** the operator runs `stop-generator` and then `start-generator`

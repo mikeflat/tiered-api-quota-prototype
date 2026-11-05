@@ -1,10 +1,12 @@
 package com.mikeflat.gateway.bootstrap.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
+import com.mikeflat.gateway.app.usage.UsageRecordingAlerts;
 import com.mikeflat.gateway.app.usage.UsageRecordingStats;
 import com.mikeflat.gateway.domain.quota.UsageEvent;
 import com.mikeflat.gateway.domain.quota.UsageOutcome;
@@ -24,7 +26,7 @@ class UsageWriterExecutorTest {
     private final BlockingCounter counter = new BlockingCounter();
     private final ThreadPoolExecutor executor = UsageWriterExecutor.create(2);
     private final UsageRecorder recorder = new UsageRecorder(counter, executor, (event, used) -> {
-    });
+    }, mock(UsageRecordingAlerts.class));
 
     @AfterEach
     void stopWriter() {

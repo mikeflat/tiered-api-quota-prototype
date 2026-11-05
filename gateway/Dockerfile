@@ -44,7 +44,8 @@ ENV SERVER_PORT=8080
 # (docker compose does). Without it the gateway refuses to start.
 ENV TENANTS_FILE=/config/tenants.json
 EXPOSE 8080
-# Shell-form check, so it follows a SERVER_PORT override given at `docker run`.
+# Shell-form check, so it follows a SERVER_PORT override given at `docker run`. Liveness, not
+# /actuator/health, so a Redis outage never marks the gateway container unhealthy.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
-    CMD curl -fsS "http://localhost:${SERVER_PORT}/actuator/health" || exit 1
+    CMD curl -fsS "http://localhost:${SERVER_PORT}/actuator/health/liveness" || exit 1
 ENTRYPOINT ["java", "-jar", "/app/gateway.jar"]

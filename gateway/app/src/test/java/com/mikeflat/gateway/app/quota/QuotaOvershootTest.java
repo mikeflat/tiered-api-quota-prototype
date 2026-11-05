@@ -2,6 +2,7 @@ package com.mikeflat.gateway.app.quota;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.mikeflat.gateway.app.usage.SilentUsageRecordingAlerts;
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.Admission;
@@ -42,7 +43,10 @@ class QuotaOvershootTest {
         TenantRegistry registry = new TenantRegistry(List.of(ACME));
         BlockedTenants blockedTenants = new BlockedTenants();
         UsageRecorder recorder = new UsageRecorder(
-                counter, writer, new BlockTenantsOverLimit(registry, BRONZE_LIMIT_FIVE, blockedTenants, CLOCK));
+                counter,
+                writer,
+                new BlockTenantsOverLimit(registry, BRONZE_LIMIT_FIVE, blockedTenants, CLOCK),
+                new SilentUsageRecordingAlerts());
         return new AdmitBusinessCall(
                 new AdmissionPolicy(registry, blockedTenants, BRONZE_LIMIT_FIVE), recorder, BRONZE_LIMIT_FIVE, CLOCK);
     }

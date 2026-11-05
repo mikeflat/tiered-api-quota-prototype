@@ -45,12 +45,20 @@ management:
         include: health
   endpoint:
     health:
+      # Component statuses only (e.g. components.redis.status); no host, version or error details.
+      show-components: always
       show-details: never
-      # Liveness/readiness groups come with redis-failure-and-health; keep the response to {"status":"UP"}.
+      # /actuator/health follows Redis (503 DOWN while it is unreachable, FR-17). The liveness and
+      # readiness probes report the gateway process only and stay UP during a Redis outage (NFR-4);
+      # the Docker HEALTHCHECK uses liveness. Groups are pinned so no other indicator joins a probe.
       probes:
-        enabled: false
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState
   health:
-    # Health reports the gateway process only; Redis is used for counting but is not part of
-    # health yet (NFR-4, comes with redis-failure-and-health).
+    # The Redis check is a PING bounded by spring.data.redis.timeout / connect-timeout above.
     redis:
-      enabled: false
+      enabled: true

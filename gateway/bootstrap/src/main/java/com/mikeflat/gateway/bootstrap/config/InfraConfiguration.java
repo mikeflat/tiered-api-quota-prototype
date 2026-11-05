@@ -1,7 +1,9 @@
 package com.mikeflat.gateway.bootstrap.config;
 
+import com.mikeflat.gateway.adapters.infra.logging.Slf4jUsageRecordingAlerts;
 import com.mikeflat.gateway.adapters.infra.redis.RedisUsageCounter;
 import com.mikeflat.gateway.app.usage.UsageCounter;
+import com.mikeflat.gateway.app.usage.UsageRecordingAlerts;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import java.util.concurrent.ThreadPoolExecutor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -32,6 +34,11 @@ public class InfraConfiguration {
             StringRedisTemplate redisTemplate, RedisScript<Long> recordUsageScript, QuotaSettings quotaSettings) {
         long twoPeriodsSeconds = Math.multiplyExact(2, quotaSettings.periodSeconds());
         return new RedisUsageCounter(redisTemplate, recordUsageScript, twoPeriodsSeconds);
+    }
+
+    @Bean
+    UsageRecordingAlerts usageRecordingAlerts() {
+        return new Slf4jUsageRecordingAlerts();
     }
 
     @Bean(destroyMethod = "shutdownNow")

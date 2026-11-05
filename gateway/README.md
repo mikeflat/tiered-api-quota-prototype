@@ -45,9 +45,9 @@ The modules map to the project's Clean Architecture layers like this:
 | Module (Gradle path) | Package | Clean Architecture layer | Content (now / later) |
 |---|---|---|---|
 | `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings` with `periodIndexAt`, `secondsUntilNextPeriod` and `reachesLimit`, `BlockedTenants` (the per-period blocked set), `AdmissionPolicy` with its `Admission` outcomes `Admitted`, `Blocked` (with `retryAfterSeconds`) and `TenantUnknown`, `UsageEvent` (`allowedAt`, `rejectedAt`), `UsageOutcome`); later: unblocking on a tier change |
-| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed event for each admitted call and a rejected event for each blocked call), `quota.BlockTenantsOverLimit` (run by the writer after each recorded event; blocks a tenant whose `used` reaches its current limit), `usage.UsageRecorder` (hands events to the writer executor, applies them through the port, passes the returned `used` to its `RecordedUsageListener`, counts recorded, dropped and failed events), `usage.RecordedUsageListener`, `usage.UsageCounter` port with `UsageRecordingFailedException`; later: tier change use case, metrics ports |
+| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed event for each admitted call and a rejected event for each blocked call), `quota.BlockTenantsOverLimit` (run by the writer after each recorded event; blocks a tenant whose `used` reaches its current limit), `usage.UsageRecorder` (hands events to the writer executor, applies them through the port, passes the returned `used` to its `RecordedUsageListener`, counts recorded, dropped and failed events, reports outage start and end through `RecordingOutage`), `usage.RecordedUsageListener`, `usage.UsageCounter` port with `UsageRecordingFailedException`, `usage.UsageRecordingAlerts` port; later: tier change use case, metrics ports |
 | `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | now: `filter.QuotaFilter` (tenant guard and `429` for blocked tenants) with its `TenantIdHeader` parser, `web.StubController`; later: `AdminController` |
-| `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | now: `redis.RedisUsageCounter` (implements `UsageCounter`) and the `redis/record-usage.lua` script resource; later: global metrics in the script, `MetricsSnapshotJob` reader |
+| `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | now: `redis.RedisUsageCounter` (implements `UsageCounter`) and the `redis/record-usage.lua` script resource, `logging.Slf4jUsageRecordingAlerts` (implements `UsageRecordingAlerts`); later: global metrics in the script, `MetricsSnapshotJob` reader |
 | `:adapters:persistence` | `com.mikeflat.gateway.adapters.persistence` | outbound adapters: data sources, one subpackage per storage technology | now: `file.JsonFileTenantRepository`; later: a `db` package if tenants move to a database |
 | `:bootstrap` | `com.mikeflat.gateway.bootstrap` | infrastructure / frameworks: main class, wiring | `GatewayApplication`, per-module `@Configuration` classes, `@ConfigurationProperties`, `TenantLoadFailureAnalyzer`, `config.UsageWriterExecutor` (the single-thread usage writer with its bounded queue) |
 
@@ -63,7 +63,7 @@ The gateway follows a DDD / hexagonal rule for ports:
 | Port kind | Declared in | Implemented in | Examples |
 |---|---|---|---|
 | Repository of domain objects (loading/storing tenants, …) | the domain package of the aggregate it serves, with its exceptions | `:adapters:persistence` (one subpackage per storage technology) | `TenantRepository` → `JsonFileTenantRepository` |
-| Other outbound port (Redis usage recording and metrics, other services) | `:app`, next to the use case that needs it | `:adapters:infra` | `UsageCounter` → `RedisUsageCounter` |
+| Other outbound port (Redis usage recording and metrics, other services) | `:app`, next to the use case that needs it | `:adapters:infra` | `UsageCounter` → `RedisUsageCounter`, `UsageRecordingAlerts` → `Slf4jUsageRecordingAlerts` |
 | Inbound port | `:app` use cases | called by `:adapters:api` (and by bootstrap at startup) | `LoadTenantRegistry`, `AdmitBusinessCall` |
 
 So moving tenants to a database only adds a `db` package to `:adapters:persistence` and changes
@@ -111,9 +111,9 @@ One exception: controllers and controller advice in `adapters:api` carry `@RestC
 | Module                 | Configuration class                                   | Beans now |
 |------------------------|-------------------------------------------------------|-----------|
 | `domain`               | `bootstrap/.../config/DomainConfiguration.java`       | `QuotaSettings` (from `QuotaProperties`), `BlockedTenants`, `AdmissionPolicy` (from `TenantRegistry`, `BlockedTenants`, `QuotaSettings`) |
-| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `BlockTenantsOverLimit`, `UsageRecorder` (with the writer executor and `BlockTenantsOverLimit` as its listener), `AdmitBusinessCall` |
+| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `BlockTenantsOverLimit`, `UsageRecorder` (with the writer executor, `BlockTenantsOverLimit` as its listener and `UsageRecordingAlerts`), `AdmitBusinessCall` |
 | `adapters:api`         | `bootstrap/.../config/ApiConfiguration.java`          | `StubController`, `FilterRegistrationBean<QuotaFilter>` (URL pattern `/api/*`, `REQUEST` dispatches only) |
-| `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | `RedisScript<Long>` (`redis/record-usage.lua`), `UsageCounter` (`RedisUsageCounter`, key TTL two periods), `usageWriterExecutor` (from `UsageRecordingProperties`, destroyed with `shutdownNow`) |
+| `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | `RedisScript<Long>` (`redis/record-usage.lua`), `UsageCounter` (`RedisUsageCounter`, key TTL two periods), `UsageRecordingAlerts` (`Slf4jUsageRecordingAlerts`), `usageWriterExecutor` (from `UsageRecordingProperties`, destroyed with `shutdownNow`) |
 | `adapters:persistence` | `bootstrap/.../config/PersistenceConfiguration.java`  | `TenantRepository` (`JsonFileTenantRepository`, from `TenantsProperties`) |
 
 `GatewayApplication` imports all five.
@@ -195,7 +195,13 @@ in `BlockedTenants`, with no Redis call.
   tenant over its limit is served until the writer records its next allowed event, which blocks
   it again (accepted limitation).
 - **Redis down.** Tenants already blocked keep getting `429` while Redis is unreachable, until
-  the period ends; nothing is recorded then, so no tenant is newly blocked.
+  the period ends, and every other tenant is served. Nothing is recorded then, so no tenant is
+  newly blocked, and at a period boundary during the outage every tenant is served again. This
+  holds whether Redis goes down at startup or mid-run. Once Redis is back, recording resumes
+  and tenants over their limit are blocked again without a restart. If Redis *hung* rather than
+  refused connections, record calls that timed out on the gateway may still be applied by Redis
+  when it answers again, so `used` can be higher after recovery than the events counted before
+  the outage (accepted; it only makes enforcement stricter).
 
 ## Usage recording
 
@@ -223,8 +229,28 @@ when the request arrives. Requests rejected by the guard (`400`) produce no even
   Redis. On shutdown the executor is stopped with `shutdownNow`: queued events are discarded and
   the writer is interrupted, so shutdown never waits for Redis.
 
-The recorded, dropped and failed counts are kept in memory (`UsageRecorder.stats()`); logging
-them and Redis health come with `redis-failure-and-health`.
+**Outage log lines.** The writer reports the start and the end of a Redis outage once each,
+through the `UsageRecordingAlerts` port (`Slf4jUsageRecordingAlerts` in `:adapters:infra`). The
+first failed call after a success (or the first call after startup) logs one line, and further
+failures log nothing:
+
+```
+WARN  Redis unavailable, usage recording failing: no new tenants are blocked and counting is paused (<Redis error message>)
+```
+
+The first successful call after failures logs:
+
+```
+INFO  Redis available again, usage recording resumed
+```
+
+With no business traffic, nothing is logged while Redis is down (health still reports it).
+Drops (queue full) log nothing.
+
+**Lost events are not tracked.** Events of an outage are simply not counted, and enforcement
+relies only on the current blocked set. The gateway does not report or log how many events were
+lost, failed or dropped. The recorded, dropped and failed counts stay in memory only
+(`UsageRecorder.stats()`).
 
 **Redis keys.** Periods are aligned to the UTC epoch; a new period starts from zero because its
 keys are new, with no reset job. Each key gets a TTL of two periods (`2 × QUOTA_PERIOD_SECONDS`)
@@ -284,14 +310,32 @@ Quota settings: period 60 s, limits Bronze 100, Silver 1000, Gold 10000, near th
 
 ## Health
 
-The only actuator endpoint over HTTP is `GET /actuator/health`. It needs no credentials and
-returns `200` with `{"status":"UP"}`, without component details. Other actuator paths return
-`404`.
+The only actuator endpoint over HTTP is health, with its probe and component paths. None needs
+credentials. Other actuator paths (`/actuator/env`, `/actuator/beans`, …) return `404`.
 
-Health reports the gateway process only. Redis is not part of health yet, and the gateway does
-not connect to Redis at startup (Lettuce connects on first use), so it starts and stays `UP`
-with no Redis running; business requests still succeed, they are just not counted. A Redis health component comes with `redis-failure-and-health`; liveness
-and readiness will still not depend on Redis.
+| Path | Depends on Redis | Redis reachable | Redis unreachable or hanging |
+|---|---|---|---|
+| `GET /actuator/health` | yes (`redis` component) | `200` `{"status":"UP","components":{"redis":{"status":"UP"},…}}` | `503` `{"status":"DOWN","components":{"redis":{"status":"DOWN"},…}}` |
+| `GET /actuator/health/liveness` | no | `200` `{"status":"UP"}` | `200` `{"status":"UP"}` |
+| `GET /actuator/health/readiness` | no | `200` `{"status":"UP"}` | `200` `{"status":"UP"}` |
+
+- **Status only.** Responses list component statuses (`show-components: always`) but no details
+  (`show-details: never`): no Redis host, port, version or error message.
+- **Bounded Redis check.** The Redis component sends a `PING` through the shared Lettuce
+  connection, so it is limited by `SPRING_DATA_REDIS_TIMEOUT` / `SPRING_DATA_REDIS_CONNECT_TIMEOUT`
+  (`1s`). A hung Redis never holds the health call for long.
+- **Recovery without restart.** Health goes `DOWN` when Redis stops and `UP` again once it
+  answers.
+- **Probes ignore Redis.** The liveness and readiness groups are pinned to `livenessState` and
+  `readinessState` (`management.endpoint.health.group.*` in `application.yaml`), so no Redis
+  check can join them. The Docker `HEALTHCHECK` uses liveness, so a Redis outage never marks the
+  gateway container unhealthy.
+- **Startup without Redis.** The gateway does not connect to Redis at startup (Lettuce connects
+  on first use). It starts with no Redis running: liveness and readiness are `UP`,
+  `/actuator/health` is `503` `DOWN`, and business requests still succeed but are not counted.
+
+`/actuator/health` returns `503` during a Redis outage. Clients must read its body, which says
+enforcement is degraded; it does not mean the gateway is down.
 
 ## Build, run and test
 
@@ -301,17 +345,18 @@ Run these from `gateway/`:
 ./gradlew build                      # compile, run all tests, build the jar
 ./gradlew test                       # all tests
 ./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings, usage events, blocked set, admission policy)
-./gradlew :app:test                  # use case tests (tenant loading, request admission, blocking over the limit, overshoot, usage recorder)
+./gradlew :app:test                  # use case tests (tenant loading, request admission, blocking over the limit, overshoot, usage recorder, recording outage alerts)
 ./gradlew :adapters:api:test         # tenant guard and 429 filter, problem body and stub controller tests
-./gradlew :adapters:infra:test       # Redis usage counter and record script (Testcontainers Redis)
+./gradlew :adapters:infra:test       # Redis usage counter and record script (Testcontainers Redis), outage log lines
 ./gradlew :adapters:persistence:test # tenants file adapter tests
-./gradlew :bootstrap:test            # configuration, startup, health, business endpoint, usage writer, usage recording with and without Redis, quota enforcement (incl. Redis down), port and architecture tests
+./gradlew :bootstrap:test            # configuration, startup, health with and without Redis, probes, business endpoint, usage writer, usage recording with and without Redis, quota enforcement (incl. Redis down), Redis stopped mid-run, port and architecture tests
 ./gradlew :adapters:api:compileJava  # generate from the OpenAPI spec, compile
 ./gradlew :bootstrap:bootRun         # run from source on port 8080 (Redis not needed)
 java -jar bootstrap/build/libs/gateway.jar                    # run the built jar (reads ../config/tenants.json)
 SERVER_PORT=9090 java -jar bootstrap/build/libs/gateway.jar   # run on another port
 QUOTA_PERIOD_SECONDS=30 java -jar bootstrap/build/libs/gateway.jar   # override a quota setting
-curl -i http://localhost:8080/actuator/health
+curl -i http://localhost:8080/actuator/health            # 200 UP with Redis, 503 DOWN without
+curl -i http://localhost:8080/actuator/health/liveness   # 200 UP with or without Redis
 curl -i -H "X-Tenant-Id: 1" http://localhost:8080/api/v1/resource   # 200 with the mock payload
 curl -i http://localhost:8080/api/v1/resource                        # 400 problem body
 ```
@@ -332,7 +377,8 @@ needed. The other Spring tests do not need Redis: their recording attempts again
    cache mount keeps Gradle downloads, so rebuilds after source changes are fast.
 2. **Runtime** on `eclipse-temurin:21-jre`: only `gateway.jar`, run as a non-root user with
    `java -jar /app/gateway.jar` on `SERVER_PORT` (default `8080`). The image has a healthcheck
-   on `GET /actuator/health` that follows `SERVER_PORT`.
+   on `GET /actuator/health/liveness` that follows `SERVER_PORT`, so the container stays
+   `healthy` while Redis is down.
 
 The image contains **no tenants file**. It reads `TENANTS_FILE=/config/tenants.json`, so mount
 the repository's `config/tenants.json` there (read-only). Without the mount the container exits
@@ -351,7 +397,8 @@ Run it in the background and check health, the container health status and the u
 ```bash
 docker run -d --name quota-gateway -p 8080:8080 \
   -v "$PWD/../config/tenants.json:/config/tenants.json:ro" quota-gateway:local
-curl -i http://localhost:8080/actuator/health
+curl -i http://localhost:8080/actuator/health            # 200 UP with Redis, 503 DOWN without
+curl -i http://localhost:8080/actuator/health/liveness   # 200 UP with or without Redis
 docker inspect --format '{{.State.Health.Status}}' quota-gateway   # "healthy" after a few seconds
 docker exec quota-gateway id -u                                    # not 0
 docker logs quota-gateway | grep -E "Loaded|Quota settings"        # tenants and quota settings
@@ -363,5 +410,5 @@ Run it on another port with a shorter period:
 ```bash
 docker run --rm -e SERVER_PORT=9090 -e QUOTA_PERIOD_SECONDS=30 -p 9090:9090 \
   -v "$PWD/../config/tenants.json:/config/tenants.json:ro" quota-gateway:local
-curl -i http://localhost:9090/actuator/health
+curl -i http://localhost:9090/actuator/health/liveness
 ```

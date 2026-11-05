@@ -2,6 +2,7 @@ package com.mikeflat.gateway.app.quota;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.mikeflat.gateway.app.usage.SilentUsageRecordingAlerts;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.Admission;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
@@ -41,7 +42,8 @@ class AdmitBusinessCallTest {
                 },
                 Runnable::run,
                 (event, used) -> {
-                });
+                },
+                new SilentUsageRecordingAlerts());
         return new AdmitBusinessCall(
                 new AdmissionPolicy(new TenantRegistry(List.of(ACME)), blockedTenants, SIXTY_SECOND_PERIOD),
                 recorder,

@@ -12,7 +12,7 @@ Each item is meant to become one OpenSpec change. Names in backticks are suggest
 
 4. ✅ **Done** `async-usage-recording` — Add a bounded event queue and a writer thread that applies each request event to Redis with a Lua script (increment `used` or `rejected`, return `used`), dropping and counting events when the queue is full.
 5. ✅ **Done** `blocked-set-enforcement` — Keep a per-period in-memory blocked set fed by the writer when `used ≥ limit`, reject blocked tenants with 429 and `Retry-After`, and discard the set at the period boundary. Test that blocking happens with bounded overshoot.
-6. `redis-failure-and-health` — Keep serving and enforcing from the blocked set when Redis fails, log failures and drops, and expose Redis status in `/actuator/health` with a short timeout. Test with Redis stopped mid-run.
+6. ✅ **Done** `redis-failure-and-health` — Keep serving and enforcing from the blocked set when Redis fails, log failures and drops, and expose Redis status in `/actuator/health` with a short timeout. Test with Redis stopped mid-run.
 7. `traffic-metrics-recording` — Extend the record script with global per-second and per-period allowed/rejected counts and near/over set maintenance against the tenant's current limit.
 
 ## Phase 3: Admin API

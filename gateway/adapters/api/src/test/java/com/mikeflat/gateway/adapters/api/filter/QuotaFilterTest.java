@@ -1,9 +1,11 @@
 package com.mikeflat.gateway.adapters.api.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
+import com.mikeflat.gateway.app.usage.UsageRecordingAlerts;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
 import com.mikeflat.gateway.domain.quota.BlockedTenants;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
@@ -49,7 +51,7 @@ class QuotaFilterTest {
                             blockedTenants,
                             SIXTY_SECOND_PERIOD),
                     new UsageRecorder(event -> 1, Runnable::run, (event, used) -> {
-                    }),
+                    }, mock(UsageRecordingAlerts.class)),
                     SIXTY_SECOND_PERIOD,
                     Clock.fixed(ARRIVAL, ZoneOffset.UTC)),
             jsonMapper);

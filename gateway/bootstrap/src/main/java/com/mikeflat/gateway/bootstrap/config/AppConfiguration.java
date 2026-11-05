@@ -5,6 +5,7 @@ import com.mikeflat.gateway.app.quota.BlockTenantsOverLimit;
 import com.mikeflat.gateway.app.tenant.LoadTenantRegistry;
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
+import com.mikeflat.gateway.app.usage.UsageRecordingAlerts;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
 import com.mikeflat.gateway.domain.quota.BlockedTenants;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
@@ -62,8 +63,11 @@ public class AppConfiguration {
 
     @Bean
     UsageRecorder usageRecorder(
-            UsageCounter usageCounter, Executor usageWriterExecutor, BlockTenantsOverLimit blockTenantsOverLimit) {
-        return new UsageRecorder(usageCounter, usageWriterExecutor, blockTenantsOverLimit);
+            UsageCounter usageCounter,
+            Executor usageWriterExecutor,
+            BlockTenantsOverLimit blockTenantsOverLimit,
+            UsageRecordingAlerts usageRecordingAlerts) {
+        return new UsageRecorder(usageCounter, usageWriterExecutor, blockTenantsOverLimit, usageRecordingAlerts);
     }
 
     @Bean
