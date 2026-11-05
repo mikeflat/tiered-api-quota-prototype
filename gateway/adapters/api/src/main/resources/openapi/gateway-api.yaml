@@ -1,0 +1,8 @@
+# Contract of the gateway's HTTP API. Interfaces and DTOs are generated from this file into
+# com.mikeflat.gateway.adapters.api.generated.{api,model}. Paths are added by later changes
+# (stub business endpoint, admin API).
+openapi: 3.0.3
+info:
+  title: Quota gateway API
+  version: 0.1.0
+paths: {}

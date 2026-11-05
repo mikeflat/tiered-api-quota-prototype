@@ -1,0 +1,26 @@
+[versions]
+spring-boot = "4.1.2"
+archunit = "1.5.1"
+openapi-generator = "7.27.0"
+
+[libraries]
+# Spring Boot BOM: manages versions for Spring, JUnit, AssertJ, Mockito, Testcontainers, etc.
+spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
+spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-boot-starter-data-redis = { module = "org.springframework.boot:spring-boot-starter-data-redis" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+spring-test = { module = "org.springframework:spring-test" }
+spring-tx = { module = "org.springframework:spring-tx" }
+mockito-core = { module = "org.mockito:mockito-core" }
+assertj-core = { module = "org.assertj:assertj-core" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+openapi-generator = { id = "org.openapi.generator", version.ref = "openapi-generator" }

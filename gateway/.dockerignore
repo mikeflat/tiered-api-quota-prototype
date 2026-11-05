@@ -1,0 +1,7 @@
+# Keep the build context to sources only: build output, caches and IDE files are
+# produced or used on the host and must not leak into the image build.
+build/
+**/build/
+.gradle/
+.idea/
+.env

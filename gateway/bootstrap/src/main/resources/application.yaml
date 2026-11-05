@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: gateway
+  data:
+    # Stub settings: Redis is configured but not used yet (first used by async-usage-recording).
+    # Lettuce connects lazily, so the gateway starts without a Redis server.
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+  mvc:
+    # Spring MVC's own errors (unreadable JSON, validation) as application/problem+json too.
+    problemdetails:
+      enabled: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      # Liveness/readiness groups come with redis-failure-and-health; keep the response to {"status":"UP"}.
+      probes:
+        enabled: false
+  health:
+    # Health reports the gateway process only; Redis is not part of health yet (NFR-4).
+    redis:
+      enabled: false

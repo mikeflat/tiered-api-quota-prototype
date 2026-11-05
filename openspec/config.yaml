@@ -53,6 +53,11 @@ context: |
     - Generator: separate pacing/selection logic from HTTP sending, config loading and logging.
     - Domain and use cases are unit-tested without frameworks; adapters get integration tests.
 
+  Workflow rule (MANDATORY): never propose, suggest or start apply or archive automatically
+  (no "next: /opsx:apply" or "/opsx:archive" prompts, buttons or follow-ups, and never run them
+  unasked). Applying and archiving a change are always the user's personal choice; after
+  planning or implementation, stop and report status only.
+
 # Per-artifact rules
 rules:
   proposal:
@@ -66,7 +71,7 @@ rules:
     - Follow Clean Architecture for both frontend and backend; show which layer (domain, application, adapter, infrastructure / UI) each new class or module belongs to and the ports it uses
     - Keep the component names, Redis key model and flows from docs/03 architecture.md unless the design explicitly justifies a change
   tasks:
-    - Order tasks inside-out: domain, then use cases/ports, then adapters, then wiring/UI
+    - "Order tasks inside-out: domain, then use cases/ports, then adapters, then wiring/UI"
     - Include test tasks per layer (unit tests for domain/use cases, Testcontainers / RTL / Vitest for adapters and UI)
     - Keep each task small enough to finish and verify in one sitting
 
