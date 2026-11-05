@@ -1,0 +1,103 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["node_modules/**", "dist/**", "coverage/**"],
+  "plugins": ["react", "typescript", "oxc"],
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  },
+  "overrides": [
+    {
+      "files": ["src/domain/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["react", "react/*", "react-dom", "react-dom/*"],
+                "message": "Layering: domain must not depend on React; keep it pure TypeScript."
+              },
+              {
+                "group": ["**/application/**", "**/adapters/**", "**/ui/**"],
+                "message": "Layering: domain must not import application, adapters or UI (dependencies point inward)."
+              }
+            ]
+          }
+        ],
+        "no-restricted-globals": [
+          "error",
+          { "name": "fetch", "message": "Layering: domain must not do I/O; HTTP belongs in adapters/api." },
+          { "name": "XMLHttpRequest", "message": "Layering: domain must not do I/O; HTTP belongs in adapters/api." },
+          { "name": "window", "message": "Layering: domain must not touch browser globals." },
+          { "name": "document", "message": "Layering: domain must not touch browser globals." },
+          { "name": "localStorage", "message": "Layering: domain must not touch browser globals." },
+          { "name": "setTimeout", "message": "Layering: timers are ports; inject them instead of using setTimeout in domain." },
+          { "name": "setInterval", "message": "Layering: timers are ports; inject them instead of using setInterval in domain." }
+        ]
+      }
+    },
+    {
+      "files": ["src/application/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/adapters/**", "**/ui/**"],
+                "message": "Layering: application must not import adapters or UI; depend on ports and let main.tsx wire adapters."
+              }
+            ]
+          }
+        ],
+        "no-restricted-globals": [
+          "error",
+          { "name": "fetch", "message": "Layering: application must not call fetch; use a port implemented in adapters/api." },
+          { "name": "XMLHttpRequest", "message": "Layering: application must not do HTTP; use a port implemented in adapters/api." }
+        ]
+      }
+    },
+    {
+      "files": ["src/ui/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/adapters/**"],
+                "message": "Layering: UI must not import adapters; receive data via application hooks or props wired in main.tsx."
+              }
+            ]
+          }
+        ],
+        "no-restricted-globals": [
+          "error",
+          { "name": "fetch", "message": "Layering: UI components never call fetch; use an application hook backed by adapters/api." },
+          { "name": "XMLHttpRequest", "message": "Layering: UI components never do HTTP; use an application hook backed by adapters/api." }
+        ]
+      }
+    },
+    {
+      "files": ["src/adapters/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["react", "react/*", "react-dom", "react-dom/*"],
+                "message": "Layering: adapters must not depend on React."
+              },
+              {
+                "group": ["**/ui/**"],
+                "message": "Layering: adapters must not import UI."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

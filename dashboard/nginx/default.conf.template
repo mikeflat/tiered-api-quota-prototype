@@ -1,0 +1,63 @@
+# Dashboard nginx config. The image entrypoint runs envsubst on this template at
+# start, filling ${GATEWAY_UPSTREAM} and ${NGINX_RESOLVER}; nginx's own $variables
+# are left alone because only defined environment variables are substituted.
+#
+# One origin for the browser (D13): static app + /admin/** and /actuator/health
+# proxied to the gateway. Everything else gets the SPA shell.
+
+server {
+    listen       8080;
+    server_name  _;
+
+    root   /usr/share/nginx/html;
+    index  index.html;
+
+    # Resolve the gateway per request (variable proxy_pass), so nginx starts and
+    # serves / even when the gateway host does not exist yet, and recovers when it
+    # comes back.
+    resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
+    resolver_timeout 2s;
+
+    # Hashed build assets: cache for a long time.
+    location /assets/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # Admin API -> gateway. With a variable and no URI part in proxy_pass, the
+    # original request URI (path + query) is passed unchanged.
+    location /admin/ {
+        set $gateway http://${GATEWAY_UPSTREAM};
+        proxy_pass $gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 2s;
+        proxy_send_timeout 5s;
+        proxy_read_timeout 5s;
+    }
+
+    # Only the health endpoint, not the rest of /actuator.
+    location = /actuator/health {
+        set $gateway http://${GATEWAY_UPSTREAM};
+        proxy_pass $gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 2s;
+        proxy_send_timeout 5s;
+        proxy_read_timeout 5s;
+    }
+
+    # SPA fallback; index.html must always be revalidated.
+    location / {
+        try_files $uri /index.html;
+        add_header Cache-Control "no-cache";
+    }
+}

@@ -1,0 +1,9 @@
+# Keep the build context to sources only: dependencies and build output are
+# produced inside the image, and local env files must not leak into it.
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.log
