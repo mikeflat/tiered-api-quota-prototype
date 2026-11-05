@@ -1,0 +1,61 @@
+# Tiered Tenant Quota Prototype - the whole local stack.
+# Operate it with the scripts in /scripts (see scripts/README.md).
+#
+# - Fixed project name, so every clone/folder maps to the same stack and `stop` finds it.
+# - No health-gated dependencies: the gateway starts without Redis (NFR-4, D10), the
+#   dashboard and generator start without the gateway. depends_on only orders startup.
+# - Host ports are bound to 127.0.0.1 only and overridable via GATEWAY_PORT,
+#   DASHBOARD_PORT, REDIS_PORT (shell environment or a root .env, see .env.example).
+# - restart: "no" everywhere, so a component stopped for a demo stays stopped.
+
+name: tiered-quota
+
+services:
+  redis:
+    image: redis:8.10-alpine
+    # Counters are period-scoped and expire, so no persistence (no dump.rdb / AOF).
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    restart: "no"
+
+  gateway:
+    build: ./gateway
+    image: quota-gateway:local
+    environment:
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      redis:
+        condition: service_started
+        required: false
+    restart: "no"
+
+  dashboard:
+    build: ./dashboard
+    image: quota-dashboard:local
+    # Image defaults proxy /admin/** and /actuator/health to gateway:8080.
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-3000}:8080"
+    depends_on:
+      gateway:
+        condition: service_started
+        required: false
+    restart: "no"
+
+  generator:
+    build: ./generator
+    image: quota-generator:local
+    # Image default GATEWAY_URL=http://gateway:8080; listens on no port.
+    depends_on:
+      gateway:
+        condition: service_started
+        required: false
+    restart: "no"

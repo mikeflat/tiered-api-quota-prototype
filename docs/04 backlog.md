@@ -4,7 +4,7 @@ Each item is meant to become one OpenSpec change. Names in backticks are suggest
 
 ## Phase 1: Foundation
 
-1. `bootstrap-skeleton` — Create the repository layout with an empty gateway, dashboard and generator, plus docker compose with Redis and scripts in `/scripts` that start and stop the whole stack or each component individually. Move the initial documents into `/docs`. Each service starts and answers a trivial request.
+1. ✅ **Done** `bootstrap-skeleton` — Create the repository layout with an empty gateway, dashboard and generator, plus docker compose with Redis and scripts in `/scripts` that start and stop the whole stack or each component individually. Move the initial documents into `/docs`. Each service starts and answers a trivial request.
 2. `tenant-registry-and-config` — Load tenants from `tenants.json` into an in-memory registry and read tier limits, period length and near threshold from configuration. Seed 15 tenants (8 Bronze, 5 Silver, 2 Gold).
 3. `stub-business-endpoint` — Add `GET /api/v1/resource` returning a mock payload, behind a filter that requires a known `X-Tenant-Id` and returns 400 otherwise.
 

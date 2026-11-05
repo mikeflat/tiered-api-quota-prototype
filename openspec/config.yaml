@@ -41,6 +41,12 @@ context: |
   Testing: gateway with JUnit 5 + Testcontainers against real Redis; dashboard with
   Vitest + React Testing Library (including unhappy states); generator with Vitest.
 
+  Test execution rule (MANDATORY): never start services to test or verify a change (no
+  docker compose up, no /scripts start/stop scripts, no bootRun, npm run dev or
+  containers started by hand, no curl against a running stack). Execute only unit tests
+  and integration tests through the component's test runner (Gradle test incl.
+  Testcontainers, Vitest). Checks that need a running stack are left to the user.
+
   Architecture style (MANDATORY for the gateway and the dashboard): Clean Architecture.
     - Dependencies point inward only: domain <- application (use cases) <- adapters <- frameworks/infrastructure.
     - Domain/core logic (quota rules, periods, tiers, tenant status, polling state machine)

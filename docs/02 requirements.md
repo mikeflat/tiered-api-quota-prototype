@@ -94,7 +94,7 @@ A working prototype of three parts:
 ### 3.6 Running
 
 - **FR-27** One command (a start script around docker compose) builds and starts Redis, the gateway, the dashboard and the generator.
-- **FR-28** Scripts in `/scripts` start and stop each component individually (Redis, gateway, dashboard, generator), and stop the whole stack.
+- **FR-28** Scripts in `/scripts` start and stop Redis, the gateway and the generator individually, and stop the whole stack. The dashboard has no component scripts: it observes the Redis and gateway outages, so it starts and stops only with the whole stack.
 
 ## 4. Non-functional requirements
 

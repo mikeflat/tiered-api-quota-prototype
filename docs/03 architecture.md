@@ -180,7 +180,7 @@ The event carries the period and second captured when the request arrived, so an
 /generator           Node.js script, config, Dockerfile
 /config/tenants.json
 /scripts             start and stop the whole stack or individual components
-                     (redis, gateway, dashboard, generator), e.g. to demo a Redis
+                     (redis, gateway, generator), e.g. to demo a Redis
                      or gateway outage
 /docs                task.md, requirements.md, architecture.md, backlog.md
 /openspec            specs and changes

@@ -1,0 +1,4 @@
+# Line endings for scripts: sh needs LF, cmd.exe needs CRLF, on every OS.
+*.sh   text eol=lf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
