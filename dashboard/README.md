@@ -4,7 +4,8 @@ Admin dashboard for the Tiered Tenant Quota Prototype. It polls the gateway's sn
 endpoints and shows a header with gateway and enforcement status and the reset countdown, the
 Traffic panel (current req/s and a 60-second trend) and the Period totals panel, together with the
 live-data states: loading, gateway unreachable, reconnected, quota enforcement degraded and metrics
-unavailable. The tenant grid and its filters arrive with later changes.
+unavailable. The Tenants region shows a page of tenants with usage and status and lets the operator
+change a tenant's tier. Filters and page navigation arrive with a later change.
 
 ## Stack
 
@@ -93,6 +94,30 @@ keep the last numbers and trend, greyed out. The arithmetic lives in `src/domain
 (`resetCountdown.ts`, `trafficSummary.ts`, `trendGeometry.ts`); formatting in `src/ui/format.ts`.
 To watch the countdown restart (S3), Redis outages (S7) and gateway outages (S8) against the real
 stack, use the scripts in `/scripts`.
+
+## Tenant grid and tier changes
+
+The Tenants region shows the snapshot's page of tenants (page 0, up to 10 rows sorted by name by
+the gateway) with the columns Tenant, ID, Tier, Used, Rejected and Status, and "Showing N of T
+tenants" below. Used reads `used / limit (P%)`, with P rounded down and above 100 when a tenant
+overshot its limit; Status reads OK, Near or Over. With `"metrics":null` the rows keep name, id and
+tier and show "—" for Used, Rejected and Status; `rowsAvailable: false` shows "Tenant rows
+unavailable"; an empty page shows "No tenants".
+
+| Part | Behaviour |
+|---|---|
+| Tier list | `GET /admin/tiers` on start, retried every 5 s (2 s timeout each) until it succeeds; options read "Silver (1,000)". Until then each selector shows only the row's tier and is disabled |
+| Tier change | choosing another tier sends `PUT /admin/tenants/{id}/tier` with `{"tier": name}`; choosing the current tier sends nothing |
+| Saving | the row's selector shows the requested tier, is disabled and "Saving…" is shown; other rows stay usable |
+| Success | the row shows the answer's tier and limit until a snapshot reports that tier, so an older snapshot in flight can't flip it back |
+| Failure | the selector reverts to the latest snapshot's tier and the row shows "Tier change failed: …" — tenant not found (404), tier rejected by the gateway (400), gateway error (status), no answer within 2 s, or gateway unreachable — until the next change on that row |
+| Connection | selectors are disabled before the first snapshot and while the gateway is unreachable (rows greyed with the other regions), and enabled while Redis is down or metrics are unavailable |
+
+The per-row state is the pure reducer `src/domain/tierChange.ts`, the rows are built by
+`src/domain/tenantGrid.ts`, and `src/application/useTenantGrid.ts` sends the changes through the
+`TierAdministration` port (`src/adapters/api/httpTierAdministration.ts`). To try a tier change
+against the real stack (S6), with Redis stopped (S7) or with the gateway stopped (S8), use the
+scripts in `/scripts`.
 
 ## Scripts
 

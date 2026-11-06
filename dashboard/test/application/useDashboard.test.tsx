@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 import { flushPromises } from '../support/deferred.ts'
 import { FakeHealthSource, FakeSnapshotSource, redisDown, redisUp } from '../support/fakeSources.ts'
+import { FakeTierAdministration } from '../support/fakeTierAdministration.ts'
 import { ManualScheduler } from '../support/manualScheduler.ts'
 import { snapshotWith } from '../support/snapshots.ts'
 import { DashboardPortsProvider } from '../../src/application/DashboardPorts.tsx'
@@ -12,11 +13,12 @@ function renderDashboard() {
   const scheduler = new ManualScheduler(100_000)
   const snapshots = new FakeSnapshotSource()
   const health = new FakeHealthSource()
+  const tierAdministration = new FakeTierAdministration()
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <DashboardPortsProvider ports={{ snapshots, health, scheduler }}>{children}</DashboardPortsProvider>
+    <DashboardPortsProvider ports={{ snapshots, health, scheduler, tierAdministration }}>{children}</DashboardPortsProvider>
   )
   const hook = renderHook(() => useDashboard(), { wrapper })
-  return { scheduler, snapshots, health, hook }
+  return { scheduler, snapshots, health, tierAdministration, hook }
 }
 
 async function settle(action: () => void): Promise<void> {

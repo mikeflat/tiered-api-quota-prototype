@@ -1,0 +1,169 @@
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
+import type { GridRow, TenantGridView } from '../../../src/domain/tenantGrid.ts'
+import { TenantGrid } from '../../../src/ui/components/TenantGrid.tsx'
+import { defaultTiers } from '../../support/tiers.ts'
+
+function gridRow(overrides: Partial<GridRow> = {}): GridRow {
+  return {
+    id: 1,
+    name: 'Acme Corp',
+    tier: 'Bronze',
+    limit: 100,
+    used: 85,
+    rejected: 0,
+    status: 'near',
+    usagePercent: 85,
+    tierOptions: defaultTiers,
+    saving: false,
+    failure: null,
+    selectorEnabled: true,
+    ...overrides,
+  }
+}
+
+const blueBank = gridRow({
+  id: 2,
+  name: 'Blue Bank',
+  tier: 'Silver',
+  limit: 1000,
+  used: 1040,
+  rejected: 1240,
+  status: 'over',
+  usagePercent: 104,
+})
+
+function gridOf(...rows: GridRow[]): TenantGridView {
+  return { kind: 'rows', rows, shownCount: rows.length, total: 15 }
+}
+
+function rowOf(name: string): HTMLElement {
+  const header = screen.getByRole('rowheader', { name })
+  const row = header.closest('tr')
+  if (row === null) {
+    throw new Error(`no row for ${name}`)
+  }
+  return row
+}
+
+function selectorOf(name: string): HTMLSelectElement {
+  return screen.getByRole('combobox', { name: `Tier for ${name}` })
+}
+
+describe('TenantGrid', () => {
+  it('shows_headers_and_rows_in_order', () => {
+    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} />)
+
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Tenant',
+      'ID',
+      'Tier',
+      'Used',
+      'Rejected',
+      'Status',
+    ])
+    expect(screen.getAllByRole('rowheader').map((header) => header.textContent)).toEqual(['Acme Corp', 'Blue Bank'])
+  })
+
+  it('shows_usage_rejected_and_status_text', () => {
+    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} />)
+
+    expect(rowOf('Acme Corp')).toHaveTextContent('85 / 100 (85%)')
+    expect(within(rowOf('Acme Corp')).getByText('Near')).toHaveClass('status-warning')
+    expect(rowOf('Blue Bank')).toHaveTextContent('1,040 / 1,000 (104%)')
+    expect(rowOf('Blue Bank')).toHaveTextContent('1,240')
+    expect(within(rowOf('Blue Bank')).getByText('Over')).toHaveClass('status-error')
+  })
+
+  it('shows_dashes_without_usage_and_keeps_selector_enabled', () => {
+    render(
+      <TenantGrid
+        grid={gridOf(gridRow({ used: null, rejected: null, status: null, usagePercent: null }))}
+        onTierChange={() => {}}
+      />,
+    )
+
+    const cells = within(rowOf('Acme Corp')).getAllByRole('cell')
+    expect(cells.map((cell) => cell.textContent).slice(2)).toEqual(['—', '—', '—'])
+    expect(selectorOf('Acme Corp')).toBeEnabled()
+  })
+
+  it('shows_no_tenants_for_empty_page', () => {
+    render(<TenantGrid grid={{ kind: 'rows', rows: [], shownCount: 0, total: 0 }} onTierChange={() => {}} />)
+
+    expect(screen.getByText('No tenants')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('shows_rows_unavailable_message', () => {
+    render(<TenantGrid grid={{ kind: 'unavailable' }} onTierChange={() => {}} />)
+
+    expect(screen.getByText('Tenant rows unavailable')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('shows_count_of_total', () => {
+    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} />)
+
+    expect(screen.getByText('Showing 2 of 15 tenants')).toBeInTheDocument()
+  })
+
+  it('selector_offers_tiers_with_limits_and_selects_current', () => {
+    render(<TenantGrid grid={gridOf(gridRow())} onTierChange={() => {}} />)
+
+    const selector = selectorOf('Acme Corp')
+    expect(within(selector).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Bronze (100)',
+      'Silver (1,000)',
+      'Gold (10,000)',
+    ])
+    expect(selector).toHaveValue('Bronze')
+  })
+
+  it('choosing_tier_reports_row_and_tier', async () => {
+    const onTierChange = vi.fn()
+    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={onTierChange} />)
+
+    await userEvent.selectOptions(selectorOf('Blue Bank'), 'Gold')
+
+    expect(onTierChange).toHaveBeenCalledWith(2, 'Gold')
+  })
+
+  it('saving_row_is_disabled_and_marked', () => {
+    render(
+      <TenantGrid
+        grid={gridOf(gridRow({ tier: 'Gold', saving: true, selectorEnabled: false }), blueBank)}
+        onTierChange={() => {}}
+      />,
+    )
+
+    expect(selectorOf('Acme Corp')).toBeDisabled()
+    expect(selectorOf('Acme Corp')).toHaveValue('Gold')
+    expect(rowOf('Acme Corp')).toHaveTextContent('Saving…')
+    expect(selectorOf('Blue Bank')).toBeEnabled()
+    expect(rowOf('Blue Bank')).not.toHaveTextContent('Saving…')
+  })
+
+  it('failed_row_shows_inline_error', () => {
+    render(
+      <TenantGrid grid={gridOf(gridRow({ failure: { kind: 'notFound' } }), blueBank)} onTierChange={() => {}} />,
+    )
+
+    expect(within(rowOf('Acme Corp')).getByRole('alert')).toHaveTextContent('Tier change failed: tenant not found')
+    expect(selectorOf('Acme Corp')).toHaveValue('Bronze')
+    expect(within(rowOf('Blue Bank')).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('disabled_controls_disable_selectors', () => {
+    render(
+      <TenantGrid
+        grid={gridOf(gridRow({ selectorEnabled: false }), { ...blueBank, selectorEnabled: false })}
+        onTierChange={() => {}}
+      />,
+    )
+
+    expect(selectorOf('Acme Corp')).toBeDisabled()
+    expect(selectorOf('Blue Bank')).toBeDisabled()
+  })
+})

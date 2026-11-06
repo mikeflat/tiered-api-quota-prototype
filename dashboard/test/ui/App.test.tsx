@@ -1,22 +1,27 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { DashboardPortsProvider } from '../../src/application/DashboardPorts.tsx'
 import { flushPromises } from '../support/deferred.ts'
 import { FakeHealthSource, FakeSnapshotSource, redisDown, redisUp } from '../support/fakeSources.ts'
+import { FakeTierAdministration } from '../support/fakeTierAdministration.ts'
 import { ManualScheduler } from '../support/manualScheduler.ts'
 import { metricsWith, minuteOfTraffic, snapshotWith, snapshotWithoutMetrics } from '../support/snapshots.ts'
+import type { AdminSnapshot, TenantRow } from '../../src/domain/snapshot.ts'
+import { TierChangeRefused } from '../../src/domain/tierChange.ts'
+import { changedTier, defaultTiers, tenantRow } from '../support/tiers.ts'
 import App from '../../src/ui/App.tsx'
 
 function renderApp() {
   const scheduler = new ManualScheduler(1_700_000_000_000)
   const snapshots = new FakeSnapshotSource()
   const health = new FakeHealthSource()
+  const tierAdministration = new FakeTierAdministration()
   render(
-    <DashboardPortsProvider ports={{ snapshots, health, scheduler }}>
+    <DashboardPortsProvider ports={{ snapshots, health, scheduler, tierAdministration }}>
       <App />
     </DashboardPortsProvider>,
   )
-  return { scheduler, snapshots, health }
+  return { scheduler, snapshots, health, tierAdministration }
 }
 
 type Harness = ReturnType<typeof renderApp>
@@ -81,6 +86,52 @@ function snapshotWithTraffic(newestAllowed: number, totalAllowed: number) {
       totals: { allowed: totalAllowed, rejected: 731 },
     }),
   })
+}
+
+const seedNames = [
+  'Acme Corp',
+  'Blue Bank',
+  'Cobalt Labs',
+  'Delta Air',
+  'Echo Media',
+  'Fjord Foods',
+  'Granite Works',
+  'Harbor Health',
+  'Iris Retail',
+  'Juniper Energy',
+]
+
+function firstPage(overrides: (row: TenantRow) => Partial<TenantRow> = () => ({})): AdminSnapshot {
+  const rows = seedNames.map((name, index) => {
+    const row = tenantRow({ id: index + 1, name, used: 10 * index, rejected: index, status: 'ok' })
+    return { ...row, ...overrides(row) }
+  })
+  return snapshotWith({ tenants: { rowsAvailable: true, rows, total: 15, page: 0, size: 10 } })
+}
+
+function acmeAs(tier: string, limit: number, used = 0): AdminSnapshot {
+  return firstPage((row) => (row.id === 1 ? { tier, limit, used } : {}))
+}
+
+function selectorOf(name: string): HTMLSelectElement {
+  return screen.getByRole('combobox', { name: `Tier for ${name}` })
+}
+
+function rowOf(name: string): HTMLElement {
+  const row = screen.getByRole('rowheader', { name }).closest('tr')
+  if (row === null) {
+    throw new Error(`no row for ${name}`)
+  }
+  return row
+}
+
+async function chooseTier(name: string, tier: string): Promise<void> {
+  await settle(() => fireEvent.change(selectorOf(name), { target: { value: tier } }))
+}
+
+async function liveWithTiers(harness: Harness, snapshot = firstPage()): Promise<void> {
+  await settle(() => harness.tierAdministration.answerTiers(defaultTiers))
+  await snapshotSucceeds(harness, snapshot)
 }
 
 function region(name: string): HTMLElement {
@@ -405,5 +456,163 @@ describe('App', () => {
 
     expect(screen.getByTestId('data-regions')).not.toHaveClass('is-stale')
     expect(region('Traffic')).toHaveTextContent('Allowed 95 req/s')
+  })
+
+  it('grid_shows_first_page_with_usage_and_count', async () => {
+    const harness = renderApp()
+
+    await liveWithTiers(harness)
+
+    const table = within(region('Tenants')).getByRole('table')
+    expect(within(table).getAllByRole('rowheader').map((cell) => cell.textContent)).toEqual(seedNames)
+    expect(rowOf('Blue Bank')).toHaveTextContent('10 / 100 (10%)')
+    expect(within(rowOf('Blue Bank')).getByText('OK')).toBeInTheDocument()
+    expect(region('Tenants')).toHaveTextContent('Showing 10 of 15 tenants')
+  })
+
+  it('tier_list_loads_after_failed_first_attempt', async () => {
+    const harness = renderApp()
+    await snapshotSucceeds(harness, firstPage())
+
+    await settle(() => harness.tierAdministration.failTiers())
+    await settle(() => harness.scheduler.advanceBy(5_000))
+    expect(harness.tierAdministration.tierRequests).toHaveLength(2)
+    await settle(() => harness.tierAdministration.answerTiers(defaultTiers))
+
+    expect(within(selectorOf('Acme Corp')).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Bronze (100)',
+      'Silver (1,000)',
+      'Gold (10,000)',
+    ])
+    await settle(() => harness.scheduler.advanceBy(20_000))
+    expect(harness.tierAdministration.tierRequests).toHaveLength(2)
+  })
+
+  it('selectors_disabled_until_tiers_load', async () => {
+    const harness = renderApp()
+
+    await snapshotSucceeds(harness, firstPage())
+
+    expect(selectorOf('Acme Corp')).toBeDisabled()
+    expect(within(selectorOf('Acme Corp')).getAllByRole('option')).toHaveLength(1)
+  })
+
+  it('tier_change_saves_then_shows_new_tier', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness, acmeAs('Bronze', 100, 85))
+
+    await chooseTier('Acme Corp', 'Gold')
+
+    expect(harness.tierAdministration.latestChange()).toMatchObject({ tenantId: 1, tier: 'Gold' })
+    expect(selectorOf('Acme Corp')).toBeDisabled()
+    expect(selectorOf('Acme Corp')).toHaveValue('Gold')
+    expect(rowOf('Acme Corp')).toHaveTextContent('Saving…')
+    expect(selectorOf('Blue Bank')).toBeEnabled()
+
+    await settle(() => harness.tierAdministration.answerChange(changedTier()))
+
+    expect(selectorOf('Acme Corp')).toBeEnabled()
+    expect(selectorOf('Acme Corp')).toHaveValue('Gold')
+    expect(rowOf('Acme Corp')).not.toHaveTextContent('Saving…')
+    expect(rowOf('Acme Corp')).toHaveTextContent('85 / 10,000 (0%)')
+  })
+
+  it('older_snapshot_after_success_keeps_new_tier', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await nextSecond(harness)
+    await chooseTier('Acme Corp', 'Gold')
+    await settle(() => harness.tierAdministration.answerChange(changedTier()))
+
+    await snapshotSucceeds(harness, acmeAs('Bronze', 100))
+    expect(selectorOf('Acme Corp')).toHaveValue('Gold')
+
+    await nextSecond(harness)
+    await snapshotSucceeds(harness, acmeAs('Gold', 10000, 3))
+    expect(selectorOf('Acme Corp')).toHaveValue('Gold')
+    expect(rowOf('Acme Corp')).toHaveTextContent('3 / 10,000 (0%)')
+  })
+
+  it('tier_change_404_shows_error_and_reverts', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await chooseTier('Acme Corp', 'Gold')
+
+    await settle(() => harness.tierAdministration.failChange(new TierChangeRefused(404)))
+
+    expect(within(rowOf('Acme Corp')).getByRole('alert')).toHaveTextContent('Tier change failed: tenant not found')
+    expect(selectorOf('Acme Corp')).toHaveValue('Bronze')
+    expect(selectorOf('Acme Corp')).toBeEnabled()
+  })
+
+  it('tier_change_timeout_shows_error_and_reverts', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await chooseTier('Acme Corp', 'Gold')
+
+    await settle(() => harness.scheduler.advanceBy(2_000))
+
+    expect(harness.tierAdministration.latestChange().signal.aborted).toBe(true)
+    expect(within(rowOf('Acme Corp')).getByRole('alert')).toHaveTextContent('Tier change failed: no answer within 2 s')
+    expect(selectorOf('Acme Corp')).toHaveValue('Bronze')
+  })
+
+  it('retry_clears_error', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await chooseTier('Acme Corp', 'Gold')
+    await settle(() => harness.tierAdministration.failChange(new TierChangeRefused(502)))
+    expect(within(rowOf('Acme Corp')).getByRole('alert')).toHaveTextContent('Tier change failed: gateway error (502)')
+
+    await chooseTier('Acme Corp', 'Silver')
+
+    expect(within(rowOf('Acme Corp')).queryByRole('alert')).not.toBeInTheDocument()
+    expect(harness.tierAdministration.changes).toHaveLength(2)
+    expect(harness.tierAdministration.latestChange()).toMatchObject({ tenantId: 1, tier: 'Silver' })
+  })
+
+  it('selectors_disabled_while_unreachable_and_enabled_after_recovery', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await nextSecond(harness)
+    await snapshotFails(harness)
+    await nextSecond(harness)
+    await snapshotFails(harness)
+
+    expect(screen.getByTestId('data-regions')).toHaveClass('is-stale')
+    for (const name of seedNames) {
+      expect(selectorOf(name)).toBeDisabled()
+    }
+
+    await nextSecond(harness)
+    await snapshotSucceeds(harness, firstPage())
+    expect(selectorOf('Acme Corp')).toBeEnabled()
+  })
+
+  it('selectors_enabled_while_redis_down_and_metrics_unavailable', async () => {
+    const harness = renderApp()
+    await settle(() => harness.health.answerLatest(redisDown))
+    await settle(() => harness.tierAdministration.answerTiers(defaultTiers))
+
+    await snapshotSucceeds(harness, { ...firstPage(), metrics: null })
+
+    expect(degradedBanner()).toBeInTheDocument()
+    expect(selectorOf('Acme Corp')).toBeEnabled()
+    await chooseTier('Acme Corp', 'Gold')
+    expect(harness.tierAdministration.latestChange()).toMatchObject({ tenantId: 1, tier: 'Gold' })
+  })
+
+  it('rows_show_dashes_while_metrics_unavailable', async () => {
+    const harness = renderApp()
+
+    await liveWithTiers(harness, {
+      ...firstPage(() => ({ used: null, rejected: null, status: null })),
+      metrics: null,
+    })
+
+    const cells = within(rowOf('Acme Corp')).getAllByRole('cell')
+    expect(cells[0]).toHaveTextContent('1')
+    expect(selectorOf('Acme Corp')).toHaveValue('Bronze')
+    expect(cells.slice(2).map((cell) => cell.textContent)).toEqual(['—', '—', '—'])
   })
 })

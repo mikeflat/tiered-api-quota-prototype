@@ -1,4 +1,5 @@
 import type { DashboardView } from '../../domain/dashboardView.ts'
+import type { TenantGridView } from '../../domain/tenantGrid.ts'
 import { DataRegions } from './DataRegions.tsx'
 import { DegradedEnforcementBanner } from './DegradedEnforcementBanner.tsx'
 import { GatewayUnreachableBanner } from './GatewayUnreachableBanner.tsx'
@@ -9,7 +10,13 @@ import { ReconnectedNotice } from './ReconnectedNotice.tsx'
 
 const lastUpdatedNoteId = 'last-updated-note'
 
-export function DashboardScreen({ view }: { view: DashboardView }) {
+interface DashboardScreenProps {
+  readonly view: DashboardView
+  readonly grid: TenantGridView | null
+  readonly onTierChange: (tenantId: number, tier: string) => void
+}
+
+export function DashboardScreen({ view, grid, onTierChange }: DashboardScreenProps) {
   return (
     <div className="app">
       <header className="app-header">
@@ -36,6 +43,8 @@ export function DashboardScreen({ view }: { view: DashboardView }) {
             <DataRegions
               stale={view.stale}
               metrics={view.snapshot?.metrics ?? null}
+              grid={grid}
+              onTierChange={onTierChange}
               describedBy={view.stale ? lastUpdatedNoteId : undefined}
             />
           </>

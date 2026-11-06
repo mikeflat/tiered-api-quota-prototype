@@ -1,10 +1,11 @@
 import { createContext, useContext } from 'react'
-import type { HealthSource, Scheduler, SnapshotSource } from './ports.ts'
+import type { HealthSource, Scheduler, SnapshotSource, TierAdministration } from './ports.ts'
 
 export interface DashboardPorts {
   readonly snapshots: SnapshotSource
   readonly health: HealthSource
   readonly scheduler: Scheduler
+  readonly tierAdministration: TierAdministration
 }
 
 export const DashboardPortsContext = createContext<DashboardPorts | null>(null)

@@ -273,3 +273,80 @@ body {
 .legend-rejected::before {
   background: var(--rejected);
 }
+
+.tenant-grid-scroll {
+  overflow-x: auto;
+}
+
+.tenant-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.tenant-grid th,
+.tenant-grid td {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.tenant-grid thead th {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.tenant-grid tbody th {
+  font-weight: 600;
+}
+
+.tenant-grid .numeric {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tier-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tier-selector {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15rem 0.35rem;
+}
+
+.tier-selector:disabled {
+  opacity: 0.6;
+}
+
+.saving {
+  font-size: 0.875rem;
+}
+
+.row-error {
+  margin: 0.35rem 0 0;
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid var(--error-border);
+  background: var(--error-bg);
+  font-size: 0.875rem;
+}
+
+.tenant-status {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.grid-count {
+  margin: 0.75rem 0 0;
+  font-size: 0.875rem;
+}

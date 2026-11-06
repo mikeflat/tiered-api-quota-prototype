@@ -45,15 +45,15 @@ While the gateway is unreachable, the dashboard SHALL keep showing the last succ
 - **THEN** the note reads "last updated 10 s ago" and the data shown has not changed
 
 ### Requirement: Tier controls are disabled while unreachable
-While the gateway is unreachable or no snapshot has arrived yet, tier change controls SHALL be disabled; in every other state, including metrics unavailable and enforcement degraded, they SHALL be enabled (FR-21). The controls themselves arrive with the tenant grid; this change provides the enabled flag they read.
+While the gateway is unreachable or no snapshot has arrived yet, the tier selectors in the tenant grid SHALL be disabled; in every other state, including metrics unavailable and enforcement degraded, they SHALL be enabled (FR-21). A selector whose own tier change is in flight stays disabled as defined in `dashboard-tenant-grid`.
 
 #### Scenario: Unreachable
 - **WHEN** the gateway is unreachable
-- **THEN** the dashboard state marks tier controls as disabled
+- **THEN** every tier selector in the tenant grid is disabled
 
 #### Scenario: Metrics unavailable
 - **WHEN** the latest snapshot succeeded with `"metrics":null`
-- **THEN** the dashboard state marks tier controls as enabled
+- **THEN** the tier selectors in the tenant grid are enabled
 
 ### Requirement: Recovery shows a brief Reconnected notice
 The first successful snapshot poll after the gateway was unreachable SHALL remove the "Gateway unreachable" banner and the greying, show the received data, enable tier controls, and show a "Reconnected" notice for about 3 s (FR-21 "Recovered", S8).
