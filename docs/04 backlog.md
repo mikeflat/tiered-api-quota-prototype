@@ -17,13 +17,13 @@ Each item is meant to become one OpenSpec change. Names in backticks are suggest
 
 ## Phase 3: Admin API
 
-8. `admin-tenants-and-tiers` — Add `GET /admin/tiers` and `PUT /admin/tenants/{id}/tier`; a tier change removes the tenant from the blocked set so its next request is re-evaluated in Redis, and works while Redis is down.
-9. `admin-snapshot` — Add `GET /admin/snapshot` that returns the cached global metrics (rebuilt once per second) plus the first page of tenants by name with usage, and marks metrics unavailable when Redis can't be read.
-10. `tenant-search-and-pagination` — Add combinable filters (name contains, exact id, tier, status from the near/over sets) and offset pagination with a total count to the snapshot rows. The status filter is reported unavailable when Redis is down.
+8. ✅ **Done** `admin-tenants-and-tiers` — Add `GET /admin/tiers` and `PUT /admin/tenants/{id}/tier`; a tier change removes the tenant from the blocked set so its next request is re-evaluated in Redis, and works while Redis is down.
+9. ✅ **Done** `admin-snapshot` — Add `GET /admin/snapshot` that returns the cached global metrics (rebuilt once per second) plus the first page of tenants by name with usage, and marks metrics unavailable when Redis can't be read.
+10. ✅ **Done** `tenant-search-and-pagination` — Add combinable filters (name contains, exact id, tier, status from the near/over sets) and offset pagination with a total count to the snapshot rows. The status filter is reported unavailable when Redis is down.
 
 ## Phase 4: Traffic
 
-11. `traffic-generator` — Implement the Node.js generator that sends weighted, rate-paced traffic for tenants from `tenants.json`, survives gateway outages, and logs periodic summaries. Add it to docker compose.
+11. ✅ **Done** `traffic-generator` — Implement the Node.js generator that sends weighted, rate-paced traffic for tenants from `tenants.json`, survives gateway outages, and logs periodic summaries. Add it to docker compose.
 
 ## Phase 5: Dashboard
 

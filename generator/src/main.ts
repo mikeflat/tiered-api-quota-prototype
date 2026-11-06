@@ -1,32 +1,56 @@
-import { describeGatewayUrl, readGatewayUrl } from './config.ts';
+import { describeGatewayUrl, readFilePaths, readGatewayUrl } from './config.ts';
+import { startGenerator } from './generator.ts';
+import { loadTenantIds } from './tenants.ts';
+import { loadTrafficConfig, type TrafficConfig } from './traffic-config.ts';
 
-const KEEP_ALIVE_MS = 60 * 60 * 1000;
+type StartupSettings = {
+  readonly gatewayUrl: URL;
+  readonly tenantCount: number;
+  readonly traffic: TrafficConfig;
+};
 
 function log(message: string): void {
   console.log(`${new Date().toISOString()} ${message}`);
 }
 
+function loadStartupSettings(): StartupSettings {
+  const gatewayUrl = readGatewayUrl(process.env);
+  const paths = readFilePaths(process.env);
+  const tenantIds = loadTenantIds(paths.tenantsFile);
+  const traffic = loadTrafficConfig(paths.trafficConfigFile, tenantIds);
+  return { gatewayUrl, tenantCount: tenantIds.length, traffic };
+}
+
 function main(): void {
-  let gatewayUrl: URL;
+  let settings: StartupSettings;
   try {
-    gatewayUrl = readGatewayUrl(process.env);
+    settings = loadStartupSettings();
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
     return;
   }
+  const { gatewayUrl, tenantCount, traffic } = settings;
 
-  log(`generator started: gateway=${describeGatewayUrl(gatewayUrl)}, traffic=off (skeleton)`);
+  log(
+    `generator started: gateway=${describeGatewayUrl(gatewayUrl)}, tenants=${tenantCount}, ` +
+      `rate=${traffic.ratePerSecond} req/s, max-in-flight=${traffic.maxInFlight}`,
+  );
 
-  // Nothing else holds the event loop open yet; the traffic loop will replace this.
-  const keepAlive = setInterval(() => {}, KEEP_ALIVE_MS);
+  const generator = startGenerator(gatewayUrl, traffic, {
+    fetchFunction: fetch,
+    log,
+    random: Math.random,
+    nowMs: () => performance.now(),
+  });
 
   const stop = (signal: NodeJS.Signals): void => {
-    clearInterval(keepAlive);
     process.off('SIGTERM', stop);
     process.off('SIGINT', stop);
-    log(`generator stopped (${signal})`);
-    process.exitCode = 0;
+    void generator.stop().then(() => {
+      log(`generator stopped (${signal})`);
+      process.exitCode = 0;
+    });
   };
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);

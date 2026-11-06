@@ -39,7 +39,7 @@ services:
       QUOTA_LIMIT_GOLD: ${QUOTA_LIMIT_GOLD:-10000}
       QUOTA_NEAR_THRESHOLD_PERCENT: ${QUOTA_NEAR_THRESHOLD_PERCENT:-80}
       USAGE_QUEUE_CAPACITY: ${USAGE_QUEUE_CAPACITY:-10000}
-    # The shared tenants seed (also read by the generator later); the image expects it here.
+    # The shared tenants seed (also read by the generator); the image expects it here.
     volumes:
       - ./config/tenants.json:/config/tenants.json:ro
     ports:
@@ -65,7 +65,11 @@ services:
   generator:
     build: ./generator
     image: quota-generator:local
-    # Image default GATEWAY_URL=http://gateway:8080; listens on no port.
+    # Image defaults GATEWAY_URL=http://gateway:8080 and TENANTS_FILE=/config/tenants.json; listens on no port.
+    # traffic.json is mounted so the traffic shape changes with stop-generator/start-generator, no rebuild.
+    volumes:
+      - ./config/tenants.json:/config/tenants.json:ro
+      - ./generator/traffic.json:/app/traffic.json:ro
     depends_on:
       gateway:
         condition: service_started
