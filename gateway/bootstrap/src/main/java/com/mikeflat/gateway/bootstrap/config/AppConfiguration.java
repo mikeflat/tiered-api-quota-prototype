@@ -3,6 +3,7 @@ package com.mikeflat.gateway.bootstrap.config;
 import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
 import com.mikeflat.gateway.app.quota.BlockTenantsOverLimit;
 import com.mikeflat.gateway.app.tenant.LoadTenantRegistry;
+import com.mikeflat.gateway.app.usage.TenantUsageLimits;
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.app.usage.UsageRecordingAlerts;
@@ -56,18 +57,24 @@ public class AppConfiguration {
     }
 
     @Bean
-    BlockTenantsOverLimit blockTenantsOverLimit(
-            TenantRegistry tenantRegistry, QuotaSettings quotaSettings, BlockedTenants blockedTenants, Clock clock) {
-        return new BlockTenantsOverLimit(tenantRegistry, quotaSettings, blockedTenants, clock);
+    BlockTenantsOverLimit blockTenantsOverLimit(QuotaSettings quotaSettings, BlockedTenants blockedTenants, Clock clock) {
+        return new BlockTenantsOverLimit(quotaSettings, blockedTenants, clock);
+    }
+
+    @Bean
+    TenantUsageLimits tenantUsageLimits(TenantRegistry tenantRegistry, QuotaSettings quotaSettings) {
+        return new TenantUsageLimits(tenantRegistry, quotaSettings);
     }
 
     @Bean
     UsageRecorder usageRecorder(
             UsageCounter usageCounter,
+            TenantUsageLimits tenantUsageLimits,
             Executor usageWriterExecutor,
             BlockTenantsOverLimit blockTenantsOverLimit,
             UsageRecordingAlerts usageRecordingAlerts) {
-        return new UsageRecorder(usageCounter, usageWriterExecutor, blockTenantsOverLimit, usageRecordingAlerts);
+        return new UsageRecorder(
+                usageCounter, tenantUsageLimits, usageWriterExecutor, blockTenantsOverLimit, usageRecordingAlerts);
     }
 
     @Bean

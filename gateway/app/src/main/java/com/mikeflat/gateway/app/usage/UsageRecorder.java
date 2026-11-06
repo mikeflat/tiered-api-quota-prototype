@@ -1,24 +1,27 @@
 package com.mikeflat.gateway.app.usage;
 
 import com.mikeflat.gateway.domain.quota.UsageEvent;
+import com.mikeflat.gateway.domain.quota.UsageLimits;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.atomic.LongAdder;
 
 public final class UsageRecorder {
 
     private final UsageCounter counter;
+    private final TenantUsageLimits tenantUsageLimits;
     private final Executor writer;
     private final RecordedUsageListener listener;
     private final UsageRecordingAlerts alerts;
     private final RecordingOutage outage = new RecordingOutage();
-    private final LongAdder recorded = new LongAdder();
-    private final LongAdder dropped = new LongAdder();
-    private final LongAdder failed = new LongAdder();
 
     public UsageRecorder(
-            UsageCounter counter, Executor writer, RecordedUsageListener listener, UsageRecordingAlerts alerts) {
+            UsageCounter counter,
+            TenantUsageLimits tenantUsageLimits,
+            Executor writer,
+            RecordedUsageListener listener,
+            UsageRecordingAlerts alerts) {
         this.counter = counter;
+        this.tenantUsageLimits = tenantUsageLimits;
         this.writer = writer;
         this.listener = listener;
         this.alerts = alerts;
@@ -27,30 +30,28 @@ public final class UsageRecorder {
     public void submit(UsageEvent event) {
         try {
             writer.execute(() -> apply(event));
-        } catch (RejectedExecutionException queueFull) {
-            dropped.increment();
+        } catch (RejectedExecutionException queueFullSoEventIsDropped) {
+            return;
         }
     }
 
-    public UsageRecordingStats stats() {
-        return new UsageRecordingStats(recorded.sum(), dropped.sum(), failed.sum());
+    private void apply(UsageEvent event) {
+        tenantUsageLimits.of(event.tenantId()).ifPresent(limits -> apply(event, limits));
     }
 
-    private void apply(UsageEvent event) {
+    private void apply(UsageEvent event, UsageLimits limits) {
         long used;
         try {
-            used = counter.record(event);
+            used = counter.record(event, limits);
         } catch (UsageRecordingFailedException redisUnavailable) {
-            failed.increment();
             if (outage.failed()) {
                 alerts.recordingFailing(redisUnavailable);
             }
             return;
         }
-        recorded.increment();
         if (outage.succeeded()) {
             alerts.recordingResumed();
         }
-        listener.usageRecorded(event, used);
+        listener.usageRecorded(event, used, limits);
     }
 }

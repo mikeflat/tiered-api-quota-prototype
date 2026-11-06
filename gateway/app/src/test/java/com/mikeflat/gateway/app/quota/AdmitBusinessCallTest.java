@@ -3,6 +3,7 @@ package com.mikeflat.gateway.app.quota;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mikeflat.gateway.app.usage.SilentUsageRecordingAlerts;
+import com.mikeflat.gateway.app.usage.TenantUsageLimits;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.Admission;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
@@ -35,17 +36,19 @@ class AdmitBusinessCallTest {
     private final BlockedTenants blockedTenants = new BlockedTenants();
 
     private AdmitBusinessCall admitBusinessCallAt(long epochSecond) {
+        TenantRegistry registry = new TenantRegistry(List.of(ACME));
         UsageRecorder recorder = new UsageRecorder(
-                event -> {
+                (event, limits) -> {
                     recordedEvents.add(event);
                     return recordedEvents.size();
                 },
+                new TenantUsageLimits(registry, SIXTY_SECOND_PERIOD),
                 Runnable::run,
-                (event, used) -> {
+                (event, used, limits) -> {
                 },
                 new SilentUsageRecordingAlerts());
         return new AdmitBusinessCall(
-                new AdmissionPolicy(new TenantRegistry(List.of(ACME)), blockedTenants, SIXTY_SECOND_PERIOD),
+                new AdmissionPolicy(registry, blockedTenants, SIXTY_SECOND_PERIOD),
                 recorder,
                 SIXTY_SECOND_PERIOD,
                 Clock.fixed(Instant.ofEpochSecond(epochSecond), ZoneOffset.UTC));

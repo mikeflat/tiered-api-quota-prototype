@@ -36,12 +36,17 @@ The request thread SHALL only hand the event to a bounded in-memory queue and co
 - **WHEN** the queue is full and a known tenant sends a request
 - **THEN** the response is `200` and the request thread returns without waiting
 
-### Requirement: Events are dropped and counted when the queue is full
-When the event queue is at capacity, the gateway SHALL drop the new event and increment an in-memory dropped-events count (FR-6b, D7a). Dropped events are never recorded in Redis.
+### Requirement: Events are dropped when the queue is full
+When the event queue is at capacity, the gateway SHALL drop the new event without blocking the request thread (FR-6b, D7a). Dropped events are never recorded in Redis, and the gateway SHALL NOT count, log or report them. Deviation from FR-6b ("counted in a logged dropped-events metric") and the D7a production note: no dropped-events metric exists, because nothing would read it.
 
-#### Scenario: Overflow is counted
+#### Scenario: Overflow is dropped
 - **WHEN** the queue capacity is `2`, the writer is busy with an earlier event, and three more events are offered
-- **THEN** two events wait in the queue, one is dropped, and the dropped-events count is `1`
+- **THEN** two events wait in the queue and one is dropped
+- **AND** once the writer is free, only the earlier event and the two queued events are applied
+
+#### Scenario: Overflow during a burst
+- **WHEN** the queue is full and `100` more events are offered
+- **THEN** none of them waits for queue space and none of them is applied
 
 ### Requirement: Queue capacity is configurable
 The event queue capacity SHALL be set by `USAGE_QUEUE_CAPACITY`, default `10000` (NFR-8). A value that is not a whole number of at least 1 SHALL stop startup with an error naming the setting and the value, like the other quota settings.
@@ -55,7 +60,7 @@ The event queue capacity SHALL be set by `USAGE_QUEUE_CAPACITY`, default `10000`
 - **THEN** startup fails with a non-zero exit and an error naming the queue capacity setting and `0`
 
 ### Requirement: One writer applies each event with one atomic Redis call
-A single background writer SHALL take events from the queue in order and apply each with exactly one atomic Redis script call (D5). An allowed event SHALL increment `quota:used:{tenantId}:{p}`; a rejected event SHALL increment `quota:rejected:{tenantId}:{p}`; no other key is written. The call SHALL return the tenant's `used` for that period, `0` if none.
+A single background writer SHALL take events from the queue in order and apply each with exactly one atomic Redis script call (D5). An allowed event SHALL increment `quota:used:{tenantId}:{p}`; a rejected event SHALL increment `quota:rejected:{tenantId}:{p}`. The same call SHALL also write the traffic metrics of the event (global per-second counts, period totals and near/over set membership, see the `traffic-metrics` capability); no other key is written. The call SHALL return the tenant's `used` for that period, `0` if none.
 
 #### Scenario: Allowed events increment used
 - **WHEN** tenant `1` sends three requests in period `p` and the writer has processed their events
@@ -79,7 +84,30 @@ A single background writer SHALL take events from the queue in order and apply e
 
 #### Scenario: Script unknown to Redis
 - **WHEN** Redis has lost its script cache (for example after `SCRIPT FLUSH` or a restart) and an event is applied
-- **THEN** the event is still counted with a single successful call from the writer's point of view
+- **THEN** the event is still counted, together with its traffic metrics, with a single successful call from the writer's point of view
+
+#### Scenario: Counters and metrics change together
+- **WHEN** an allowed event of tenant `1` in epoch second `s` of period `p` is applied
+- **THEN** after that one call `quota:used:1:{p}`, `traffic:allowed:{s}` and `traffic:total:allowed:{p}` have each grown by `1` and tenant `1`'s near/over membership matches the returned `used`
+
+#### Scenario: Only expected keys are written
+- **WHEN** an allowed event of tenant `1` in epoch second `s` of period `p` is applied to an empty Redis and brings `used` below the near boundary
+- **THEN** the only keys in Redis are `quota:used:1:{p}`, `traffic:allowed:{s}` and `traffic:total:allowed:{p}`
+
+### Requirement: The writer resolves the tenant's current limit for each event
+When applying an event, the writer SHALL look up the tenant's tier at that moment and pass its limit and near-limit boundary to the record call, and SHALL use the same limit for the blocking decision of that event (FR-6, FR-11). The lookup SHALL need no I/O.
+
+#### Scenario: Limit and boundary passed for a Bronze tenant
+- **WHEN** the Bronze limit is `100`, the near threshold is `80` %, and an event of Bronze tenant `1` is applied
+- **THEN** the record call is evaluated with limit `100` and near boundary `80`
+
+#### Scenario: Limit and boundary passed for a Gold tenant
+- **WHEN** the Gold limit is `10000`, the near threshold is `80` %, and an event of Gold tenant `14` is applied
+- **THEN** the record call is evaluated with limit `10000` and near boundary `8000`
+
+#### Scenario: Redis down does not affect the lookup
+- **WHEN** Redis is unreachable and an event is applied
+- **THEN** the lookup succeeds, the record call fails, and the event is discarded without blocking anyone
 
 ### Requirement: Events count toward the period they were created in
 The writer SHALL use the event's own period index for the keys, not the period current when the event is processed, so an event processed after a boundary still counts toward its own period (FR-6a). A new period SHALL start from zero for every tenant because its keys are new, with no reset job (FR-3, D4).
@@ -104,11 +132,15 @@ Each counter key SHALL get a time-to-live of two periods (`2 × periodSeconds`) 
 - **THEN** the TTL of `quota:used:1:{p}` is not reset to the full two periods
 
 ### Requirement: Redis failures do not stop recording
-When a Redis call fails or times out, the writer SHALL discard that event, increment an in-memory failed-events count and continue with the next event; it SHALL NOT retry the event or terminate (FR-8, D6). When Redis becomes reachable again, later events SHALL be counted without a gateway restart. Each Redis call SHALL time out after a configurable short duration (default 1 s). Logging of the outage is described in "Recording outage start and end are logged once".
+When a Redis call fails or times out, the writer SHALL discard that event and continue with the next event; it SHALL NOT retry the event or terminate (FR-8, D6). The gateway SHALL NOT count failed events. When Redis becomes reachable again, later events SHALL be counted without a gateway restart. Each Redis call SHALL time out after a configurable short duration (default 1 s). Logging of the outage is described in "Recording outage start and end are logged once".
 
 #### Scenario: Redis unavailable
 - **WHEN** Redis is unreachable and a known tenant sends requests
-- **THEN** every response is `200`, the failed-events count grows, and nothing is counted in Redis for those requests
+- **THEN** every response is `200`, the writer attempts one Redis call per event, and nothing is counted in Redis for those requests
+
+#### Scenario: Failed event is not retried
+- **WHEN** the Redis call for an event fails and the next event is then applied successfully
+- **THEN** the failed event is attempted exactly once and the next event is counted
 
 #### Scenario: Redis returns
 - **WHEN** Redis was unreachable, becomes reachable again, and tenant `1` then sends a request in period `p`
@@ -116,7 +148,7 @@ When a Redis call fails or times out, the writer SHALL discard that event, incre
 
 #### Scenario: Redis stops mid-run
 - **WHEN** tenants are sending requests that are being counted and Redis stops answering
-- **THEN** responses keep their status and do not wait for Redis, and the writer counts each event whose Redis call failed or timed out as failed
+- **THEN** responses keep their status and do not wait for Redis, and the writer discards each event whose Redis call failed or timed out
 - **AND** if Redis was unreachable, those events are not counted in Redis; if Redis hung, record calls that timed out may still be applied by Redis once it answers again (the gateway does not retry or cancel them)
 
 ### Requirement: Writer lifecycle follows the gateway

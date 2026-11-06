@@ -2,7 +2,6 @@ package com.mikeflat.gateway.bootstrap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.mikeflat.gateway.app.usage.UsageRecorder;
 import java.net.http.HttpResponse;
 import java.time.Clock;
 import java.time.Duration;
@@ -18,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,6 +26,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+@Import(ObservedUsageCounterConfiguration.class)
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @Testcontainers
 class UsageRecordingIntegrationTest {
@@ -56,7 +57,7 @@ class UsageRecordingIntegrationTest {
     private StringRedisTemplate redis;
 
     @Autowired
-    private UsageRecorder usageRecorder;
+    private ObservedUsageCounter usageCounter;
 
     @BeforeEach
     void emptyDatabase() {
@@ -82,7 +83,7 @@ class UsageRecordingIntegrationTest {
 
     @Test
     void guard_rejections_are_not_counted() throws Exception {
-        long recordedBefore = usageRecorder.stats().recorded();
+        long recordedBefore = usageCounter.recorded();
 
         assertThat(getAs("999").statusCode()).isEqualTo(400);
         assertThat(HttpProbe.get(port, "/api/v1/resource").statusCode()).isEqualTo(400);
@@ -90,18 +91,18 @@ class UsageRecordingIntegrationTest {
 
         Eventually.within(RECORDING_DEADLINE,
                 () -> assertThat(redis.opsForValue().get(usedKey(2))).isEqualTo("1"));
-        assertThat(usageRecorder.stats().recorded()).isEqualTo(recordedBefore + 1);
+        assertThat(usageCounter.recorded()).isEqualTo(recordedBefore + 1);
         assertThat(redis.keys("quota:*")).containsExactly(usedKey(2));
     }
 
     @Test
     void counting_resumes_after_redis_returns() throws Exception {
-        long failedBefore = usageRecorder.stats().failed();
+        long failedBefore = usageCounter.failed();
         REDIS.getDockerClient().pauseContainerCmd(REDIS.getContainerId()).exec();
         try {
             assertThat(getAs("3").statusCode()).isEqualTo(200);
             Eventually.within(RECORDING_DEADLINE,
-                    () -> assertThat(usageRecorder.stats().failed()).isGreaterThan(failedBefore));
+                    () -> assertThat(usageCounter.failed()).isGreaterThan(failedBefore));
         } finally {
             REDIS.getDockerClient().unpauseContainerCmd(REDIS.getContainerId()).exec();
         }

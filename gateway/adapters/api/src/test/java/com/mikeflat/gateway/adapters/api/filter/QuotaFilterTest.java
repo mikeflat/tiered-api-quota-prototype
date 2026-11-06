@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
+import com.mikeflat.gateway.app.usage.TenantUsageLimits;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.app.usage.UsageRecordingAlerts;
 import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
@@ -44,14 +45,17 @@ class QuotaFilterTest {
 
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
     private final BlockedTenants blockedTenants = new BlockedTenants();
+    private final TenantRegistry registry = new TenantRegistry(List.of(new Tenant(1, "Acme Corp", Tier.BRONZE)));
     private final QuotaFilter filter = new QuotaFilter(
             new AdmitBusinessCall(
-                    new AdmissionPolicy(
-                            new TenantRegistry(List.of(new Tenant(1, "Acme Corp", Tier.BRONZE))),
-                            blockedTenants,
-                            SIXTY_SECOND_PERIOD),
-                    new UsageRecorder(event -> 1, Runnable::run, (event, used) -> {
-                    }, mock(UsageRecordingAlerts.class)),
+                    new AdmissionPolicy(registry, blockedTenants, SIXTY_SECOND_PERIOD),
+                    new UsageRecorder(
+                            (event, limits) -> 1,
+                            new TenantUsageLimits(registry, SIXTY_SECOND_PERIOD),
+                            Runnable::run,
+                            (event, used, limits) -> {
+                            },
+                            mock(UsageRecordingAlerts.class)),
                     SIXTY_SECOND_PERIOD,
                     Clock.fixed(ARRIVAL, ZoneOffset.UTC)),
             jsonMapper);

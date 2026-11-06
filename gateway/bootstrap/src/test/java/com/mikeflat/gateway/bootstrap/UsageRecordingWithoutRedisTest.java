@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.mikeflat.gateway.app.usage.UsageCounter;
-import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.app.usage.UsageRecordingFailedException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -22,10 +21,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+@Import(ObservedUsageCounterConfiguration.class)
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 class UsageRecordingWithoutRedisTest {
 
@@ -43,7 +44,7 @@ class UsageRecordingWithoutRedisTest {
     private int port;
 
     @Autowired
-    private UsageRecorder usageRecorder;
+    private ObservedUsageCounter usageCounter;
 
     @Test
     void requests_succeed_while_redis_is_unreachable() throws Exception {
@@ -59,17 +60,17 @@ class UsageRecordingWithoutRedisTest {
     }
 
     @Test
-    void failed_events_are_counted_while_redis_is_unreachable() throws Exception {
-        long failedBefore = usageRecorder.stats().failed();
-        long recordedBefore = usageRecorder.stats().recorded();
+    void events_fail_without_being_recorded_while_redis_is_unreachable() throws Exception {
+        long failedBefore = usageCounter.failed();
+        long recordedBefore = usageCounter.recorded();
 
         for (int i = 0; i < 3; i++) {
             assertThat(getAs(port, "2").statusCode()).isEqualTo(200);
         }
 
         Eventually.within(Duration.ofSeconds(15),
-                () -> assertThat(usageRecorder.stats().failed()).isGreaterThanOrEqualTo(failedBefore + 3));
-        assertThat(usageRecorder.stats().recorded()).isEqualTo(recordedBefore);
+                () -> assertThat(usageCounter.failed()).isGreaterThanOrEqualTo(failedBefore + 3));
+        assertThat(usageCounter.recorded()).isEqualTo(recordedBefore);
     }
 
     @Test
@@ -112,7 +113,7 @@ class UsageRecordingWithoutRedisTest {
         @Bean
         @Primary
         UsageCounter hangingUsageCounter() {
-            return event -> {
+            return (event, limits) -> {
                 entered.countDown();
                 try {
                     new CountDownLatch(1).await();

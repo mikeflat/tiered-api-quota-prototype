@@ -4,14 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import com.mikeflat.gateway.app.usage.TenantUsageLimits;
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.app.usage.UsageRecordingAlerts;
-import com.mikeflat.gateway.app.usage.UsageRecordingStats;
+import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import com.mikeflat.gateway.domain.quota.UsageEvent;
+import com.mikeflat.gateway.domain.quota.UsageLimits;
 import com.mikeflat.gateway.domain.quota.UsageOutcome;
+import com.mikeflat.gateway.domain.tenant.Tenant;
+import com.mikeflat.gateway.domain.tenant.TenantRegistry;
+import com.mikeflat.gateway.domain.tenant.Tier;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.LongStream;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -25,8 +32,17 @@ class UsageWriterExecutorTest {
 
     private final BlockingCounter counter = new BlockingCounter();
     private final ThreadPoolExecutor executor = UsageWriterExecutor.create(2);
-    private final UsageRecorder recorder = new UsageRecorder(counter, executor, (event, used) -> {
+    private final UsageRecorder recorder = new UsageRecorder(counter, tenantUsageLimits(), executor, (event, used, limits) -> {
     }, mock(UsageRecordingAlerts.class));
+
+    private static TenantUsageLimits tenantUsageLimits() {
+        List<Tenant> tenants = LongStream.rangeClosed(1, 103)
+                .mapToObj(id -> new Tenant(id, "Tenant " + id, Tier.BRONZE))
+                .toList();
+        QuotaSettings settings = new QuotaSettings(
+                Duration.ofSeconds(60), Map.of(Tier.BRONZE, 100L, Tier.SILVER, 1_000L, Tier.GOLD, 10_000L), 80);
+        return new TenantUsageLimits(new TenantRegistry(tenants), settings);
+    }
 
     @AfterEach
     void stopWriter() {
@@ -43,13 +59,11 @@ class UsageWriterExecutorTest {
         recorder.submit(event(4));
 
         assertThat(executor.getQueue()).hasSize(2);
-        assertThat(recorder.stats()).isEqualTo(new UsageRecordingStats(0, 1, 0));
 
         counter.release();
         executor.shutdown();
         assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
         assertThat(counter.recordedTenants).containsExactly(1L, 2L, 3L);
-        assertThat(recorder.stats()).isEqualTo(new UsageRecordingStats(3, 1, 0));
     }
 
     @Test
@@ -64,7 +78,11 @@ class UsageWriterExecutorTest {
             }
         });
 
-        assertThat(recorder.stats().dropped()).isEqualTo(100);
+        assertThat(executor.getQueue()).hasSize(2);
+        counter.release();
+        executor.shutdown();
+        assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(counter.recordedTenants).containsExactly(1L, 2L, 3L);
     }
 
     @Test
@@ -108,7 +126,7 @@ class UsageWriterExecutorTest {
         }
 
         @Override
-        public long record(UsageEvent event) {
+        public long record(UsageEvent event, UsageLimits limits) {
             writerThread = Thread.currentThread();
             started.countDown();
             try {

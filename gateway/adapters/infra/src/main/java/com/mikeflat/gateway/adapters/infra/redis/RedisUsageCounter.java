@@ -3,6 +3,7 @@ package com.mikeflat.gateway.adapters.infra.redis;
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecordingFailedException;
 import com.mikeflat.gateway.domain.quota.UsageEvent;
+import com.mikeflat.gateway.domain.quota.UsageLimits;
 import com.mikeflat.gateway.domain.quota.UsageOutcome;
 import java.util.List;
 import org.springframework.dao.DataAccessException;
@@ -12,18 +13,19 @@ import org.springframework.data.redis.core.script.RedisScript;
 public final class RedisUsageCounter implements UsageCounter {
 
     public static final String RECORD_USAGE_SCRIPT = "redis/record-usage.lua";
+    public static final long SECOND_KEY_TTL_SECONDS = 120;
 
     private final StringRedisTemplate template;
     private final RedisScript<Long> recordUsageScript;
-    private final String ttlSeconds;
+    private final String periodTtlSeconds;
 
-    public RedisUsageCounter(StringRedisTemplate template, RedisScript<Long> recordUsageScript, long ttlSeconds) {
-        if (ttlSeconds < 1) {
-            throw new IllegalArgumentException("usage key ttl must be at least 1 second, got " + ttlSeconds);
+    public RedisUsageCounter(StringRedisTemplate template, RedisScript<Long> recordUsageScript, long periodTtlSeconds) {
+        if (periodTtlSeconds < 1) {
+            throw new IllegalArgumentException("usage key ttl must be at least 1 second, got " + periodTtlSeconds);
         }
         this.template = template;
         this.recordUsageScript = recordUsageScript;
-        this.ttlSeconds = Long.toString(ttlSeconds);
+        this.periodTtlSeconds = Long.toString(periodTtlSeconds);
     }
 
     public static String usedKey(long tenantId, long periodIndex) {
@@ -34,13 +36,41 @@ public final class RedisUsageCounter implements UsageCounter {
         return "quota:rejected:" + tenantId + ":" + periodIndex;
     }
 
+    public static String secondKey(UsageOutcome outcome, long epochSecond) {
+        return "traffic:" + scriptOutcome(outcome) + ":" + epochSecond;
+    }
+
+    public static String periodTotalKey(UsageOutcome outcome, long periodIndex) {
+        return "traffic:total:" + scriptOutcome(outcome) + ":" + periodIndex;
+    }
+
+    public static String nearKey(long periodIndex) {
+        return "quota:near:" + periodIndex;
+    }
+
+    public static String overKey(long periodIndex) {
+        return "quota:over:" + periodIndex;
+    }
+
     @Override
-    public long record(UsageEvent event) {
+    public long record(UsageEvent event, UsageLimits limits) {
         List<String> keys = List.of(
                 usedKey(event.tenantId(), event.periodIndex()),
-                rejectedKey(event.tenantId(), event.periodIndex()));
+                rejectedKey(event.tenantId(), event.periodIndex()),
+                secondKey(event.outcome(), event.epochSecond()),
+                periodTotalKey(event.outcome(), event.periodIndex()),
+                nearKey(event.periodIndex()),
+                overKey(event.periodIndex()));
         try {
-            return template.execute(recordUsageScript, keys, scriptOutcome(event.outcome()), ttlSeconds);
+            return template.execute(
+                    recordUsageScript,
+                    keys,
+                    scriptOutcome(event.outcome()),
+                    periodTtlSeconds,
+                    Long.toString(SECOND_KEY_TTL_SECONDS),
+                    Long.toString(limits.limit()),
+                    Long.toString(limits.nearBoundary()),
+                    Long.toString(event.tenantId()));
         } catch (DataAccessException redisFailure) {
             throw new UsageRecordingFailedException(
                     "recording usage of tenant " + event.tenantId() + " in period " + event.periodIndex() + " failed",

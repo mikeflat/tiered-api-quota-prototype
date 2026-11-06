@@ -195,15 +195,21 @@ class QuotaSettingsTest {
     }
 
     @Test
-    void used_equal_to_limit_reaches_limit() {
-        assertThat(defaults.reachesLimit(Tier.BRONZE, 100)).isTrue();
-        assertThat(defaults.reachesLimit(Tier.BRONZE, 101)).isTrue();
+    void bronze_limits_are_100_and_80() {
+        assertThat(defaults.limitsOf(Tier.BRONZE)).isEqualTo(new UsageLimits(100, 80));
     }
 
     @Test
-    void used_below_limit_does_not_reach_limit() {
-        assertThat(defaults.reachesLimit(Tier.BRONZE, 99)).isFalse();
-        assertThat(defaults.reachesLimit(Tier.SILVER, 100)).isFalse();
+    void gold_limits_are_10000_and_8000() {
+        assertThat(defaults.limitsOf(Tier.GOLD)).isEqualTo(new UsageLimits(10_000, 8_000));
+    }
+
+    @Test
+    void limit_of_one_has_near_boundary_one() {
+        QuotaSettings bronzeLimitOne =
+                settings(Duration.ofSeconds(60), Map.of(Tier.BRONZE, 1L, Tier.SILVER, 1_000L, Tier.GOLD, 10_000L), 80);
+
+        assertThat(bronzeLimitOne.limitsOf(Tier.BRONZE)).isEqualTo(new UsageLimits(1, 1));
     }
 
     @Test

@@ -44,10 +44,10 @@ The modules map to the project's Clean Architecture layers like this:
 
 | Module (Gradle path) | Package | Clean Architecture layer | Content (now / later) |
 |---|---|---|---|
-| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings` with `periodIndexAt`, `secondsUntilNextPeriod` and `reachesLimit`, `BlockedTenants` (the per-period blocked set), `AdmissionPolicy` with its `Admission` outcomes `Admitted`, `Blocked` (with `retryAfterSeconds`) and `TenantUnknown`, `UsageEvent` (`allowedAt`, `rejectedAt`), `UsageOutcome`); later: unblocking on a tier change |
-| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed event for each admitted call and a rejected event for each blocked call), `quota.BlockTenantsOverLimit` (run by the writer after each recorded event; blocks a tenant whose `used` reaches its current limit), `usage.UsageRecorder` (hands events to the writer executor, applies them through the port, passes the returned `used` to its `RecordedUsageListener`, counts recorded, dropped and failed events, reports outage start and end through `RecordingOutage`), `usage.RecordedUsageListener`, `usage.UsageCounter` port with `UsageRecordingFailedException`, `usage.UsageRecordingAlerts` port; later: tier change use case, metrics ports |
+| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings` with `periodIndexAt`, `secondsUntilNextPeriod`, `nearBoundary` and `limitsOf`, `UsageLimits` (a tier's limit and near-limit boundary, with `reachedBy(used)`), `BlockedTenants` (the per-period blocked set), `AdmissionPolicy` with its `Admission` outcomes `Admitted`, `Blocked` (with `retryAfterSeconds`) and `TenantUnknown`, `UsageEvent` (`allowedAt`, `rejectedAt`), `UsageOutcome`); later: unblocking on a tier change |
+| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed event for each admitted call and a rejected event for each blocked call), `quota.BlockTenantsOverLimit` (run by the writer after each recorded event; blocks a tenant when `limits.reachedBy(used)`), `usage.TenantUsageLimits` (`of(tenantId)`: the `UsageLimits` of the tenant's tier at that moment, from `TenantRegistry` and `QuotaSettings`), `usage.UsageRecorder` (hands events to the writer executor; on the writer resolves the tenant's limits, skips an event of an unknown tenant, applies it through the port and passes the returned `used` with the same limits to its `RecordedUsageListener`; reports outage start and end through `RecordingOutage`), `usage.RecordedUsageListener` (`usageRecorded(event, used, limits)`), `usage.UsageCounter` port (`record(event, limits)` → `used`) with `UsageRecordingFailedException`, `usage.UsageRecordingAlerts` port; later: tier change use case, metrics reader ports |
 | `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | now: `filter.QuotaFilter` (tenant guard and `429` for blocked tenants) with its `TenantIdHeader` parser, `web.StubController`; later: `AdminController` |
-| `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | now: `redis.RedisUsageCounter` (implements `UsageCounter`) and the `redis/record-usage.lua` script resource, `logging.Slf4jUsageRecordingAlerts` (implements `UsageRecordingAlerts`); later: global metrics in the script, `MetricsSnapshotJob` reader |
+| `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | now: `redis.RedisUsageCounter` (implements `UsageCounter`; key builders for every key the script writes) and the `redis/record-usage.lua` script resource (tenant counters, global traffic counts, near/over sets), `logging.Slf4jUsageRecordingAlerts` (implements `UsageRecordingAlerts`); later: `MetricsSnapshotJob` reader |
 | `:adapters:persistence` | `com.mikeflat.gateway.adapters.persistence` | outbound adapters: data sources, one subpackage per storage technology | now: `file.JsonFileTenantRepository`; later: a `db` package if tenants move to a database |
 | `:bootstrap` | `com.mikeflat.gateway.bootstrap` | infrastructure / frameworks: main class, wiring | `GatewayApplication`, per-module `@Configuration` classes, `@ConfigurationProperties`, `TenantLoadFailureAnalyzer`, `config.UsageWriterExecutor` (the single-thread usage writer with its bounded queue) |
 
@@ -111,7 +111,7 @@ One exception: controllers and controller advice in `adapters:api` carry `@RestC
 | Module                 | Configuration class                                   | Beans now |
 |------------------------|-------------------------------------------------------|-----------|
 | `domain`               | `bootstrap/.../config/DomainConfiguration.java`       | `QuotaSettings` (from `QuotaProperties`), `BlockedTenants`, `AdmissionPolicy` (from `TenantRegistry`, `BlockedTenants`, `QuotaSettings`) |
-| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `BlockTenantsOverLimit`, `UsageRecorder` (with the writer executor, `BlockTenantsOverLimit` as its listener and `UsageRecordingAlerts`), `AdmitBusinessCall` |
+| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `BlockTenantsOverLimit`, `TenantUsageLimits`, `UsageRecorder` (with `TenantUsageLimits`, the writer executor, `BlockTenantsOverLimit` as its listener and `UsageRecordingAlerts`), `AdmitBusinessCall` |
 | `adapters:api`         | `bootstrap/.../config/ApiConfiguration.java`          | `StubController`, `FilterRegistrationBean<QuotaFilter>` (URL pattern `/api/*`, `REQUEST` dispatches only) |
 | `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | `RedisScript<Long>` (`redis/record-usage.lua`), `UsageCounter` (`RedisUsageCounter`, key TTL two periods), `UsageRecordingAlerts` (`Slf4jUsageRecordingAlerts`), `usageWriterExecutor` (from `UsageRecordingProperties`, destroyed with `shutdownNow`) |
 | `adapters:persistence` | `bootstrap/.../config/PersistenceConfiguration.java`  | `TenantRepository` (`JsonFileTenantRepository`, from `TenantsProperties`) |
@@ -182,7 +182,8 @@ in `BlockedTenants`, with no Redis call.
   every tenant is served again without a reset job; the old set is replaced on the first block
   of the new period, and a block for an older period is ignored.
 - **The writer blocks.** After each recorded allowed event, `BlockTenantsOverLimit` compares the
-  `used` returned by the record script with the limit of the tenant's tier at that moment. At
+  `used` returned by the record script with the limit of the tenant's tier at that moment (the
+  same `UsageLimits` the script got for the near/over sets). At
   `used ≥ limit`, and only if the event's period is still the current one, the tenant is added
   to the blocked set. Rejected events and late events of a past period never block.
 - **Rejections are counted, not used.** A `429` produces a rejected usage event, so
@@ -216,14 +217,21 @@ when the request arrives. Requests rejected by the guard (`400`) produce no even
   fails or is dropped.
 - **Bounded queue, drop on overflow.** The writer is a single-thread `ThreadPoolExecutor` with an
   `ArrayBlockingQueue` of `USAGE_QUEUE_CAPACITY` waiting events (the writer holds one more in
-  flight). When the queue is full the new event is dropped and the dropped count grows.
+  flight). When the queue is full the new event is dropped; drops are not counted.
+- **Limits at write time.** For each event the writer looks up the tenant's tier at that moment
+  (`TenantUsageLimits`, in memory) and gets its limit and near-limit boundary (`UsageLimits`).
+  The same values go to the record script and to `BlockTenantsOverLimit`, so a tier change
+  applies from the tenant's next recorded event. An event of a tenant missing from the registry
+  is skipped without a Redis call.
 - **One writer, one Redis call per event.** The daemon thread `usage-writer` applies events in
   order, each with one call of `redis/record-usage.lua` (`EVALSHA`, falling back to `EVAL` when
-  Redis has lost its script cache). The script returns the tenant's `used` for the event's
-  period, which `BlockTenantsOverLimit` compares with the limit (see
-  [Quota enforcement](#quota-enforcement)).
+  Redis has lost its script cache). In that one atomic call the script increments the tenant's
+  counter, the global per-second count and the global period total for the event's outcome, then
+  updates the tenant's near/over set membership (see [Redis keys](#redis-keys)). It returns the
+  tenant's `used` for the event's period, which `BlockTenantsOverLimit` compares with the limit
+  (see [Quota enforcement](#quota-enforcement)).
 - **Redis failures.** A failed or timed-out call (`SPRING_DATA_REDIS_TIMEOUT`, default `1s`)
-  discards the event and grows the failed count; the writer continues with the next event and
+  discards the event (it is not counted anywhere); the writer continues with the next event and
   never retries. Once Redis is back, later events are counted without a restart.
 - **Lifecycle.** The writer thread starts with the first event, so startup does not contact
   Redis. On shutdown the executor is stopped with `shutdownNow`: queued events are discarded and
@@ -249,20 +257,38 @@ Drops (queue full) log nothing.
 
 **Lost events are not tracked.** Events of an outage are simply not counted, and enforcement
 relies only on the current blocked set. The gateway does not report or log how many events were
-lost, failed or dropped. The recorded, dropped and failed counts stay in memory only
-(`UsageRecorder.stats()`).
+lost, failed or dropped, and keeps no count of them, not even in memory.
 
-**Redis keys.** Periods are aligned to the UTC epoch; a new period starts from zero because its
-keys are new, with no reset job. Each key gets a TTL of two periods (`2 × QUOTA_PERIOD_SECONDS`)
-when the script creates it, and later increments do not extend it.
+### Redis keys
 
-| Key | Written by | Value |
-|---|---|---|
-| `quota:used:{tenantId}:{p}` | allowed events (`INCR`) | requests counted toward the tenant's quota in period `p` |
-| `quota:rejected:{tenantId}:{p}` | rejected events (`INCR`) | requests rejected for the tenant in period `p` |
+Periods are aligned to the UTC epoch; a new period starts from zero because its keys are new,
+with no reset job. Every key gets its TTL when the script creates it, and later writes do not
+extend it. `{p}` is the event's period index and `{s}` its epoch second.
 
-An event always uses its own period index, so an event applied after the period boundary still
-counts toward the period it arrived in.
+| Key | Written by | Value | TTL |
+|---|---|---|---|
+| `quota:used:{tenantId}:{p}` | allowed events (`INCR`) | requests counted toward the tenant's quota in period `p` | two periods |
+| `quota:rejected:{tenantId}:{p}` | rejected events (`INCR`) | requests rejected for the tenant in period `p` | two periods |
+| `traffic:allowed:{s}` / `traffic:rejected:{s}` | every event, by outcome (`INCR`) | requests of all tenants in epoch second `s` | `120` s, independent of the period |
+| `traffic:total:allowed:{p}` / `traffic:total:rejected:{p}` | every event, by outcome (`INCR`) | requests of all tenants in period `p` | two periods |
+| `quota:near:{p}` | every event (`SADD` / `SREM`) | ids of tenants near their limit in period `p` | two periods (`EXPIRE … NX`) |
+| `quota:over:{p}` | every event (`SADD` / `SREM`) | ids of tenants at or over their limit in period `p` | two periods (`EXPIRE … NX`) |
+
+"Two periods" is `2 × QUOTA_PERIOD_SECONDS`.
+
+**Status rule.** After counting an event (allowed or rejected), the script compares the tenant's
+`used` in `p` with the limit and near-limit boundary current at write time: `used ≥ limit` puts
+the tenant only in `quota:over:{p}`, `nearBoundary ≤ used < limit` only in `quota:near:{p}`, and
+anything lower in neither. The boundary is the smallest count reaching
+`QUOTA_NEAR_THRESHOLD_PERCENT` of the limit (`80` of `100`, `8000` of `10000`). Membership
+changes only when an event of that tenant is applied, so after a tier change it stays as it was
+until the tenant's next request. A set gets its TTL with `EXPIRE … NX`, which also covers a set
+that Redis deleted when it emptied and that is recreated later; this needs Redis 7 or newer
+(compose and the tests use `redis:8.10-alpine`).
+
+An event always uses its own period index and epoch second, so an event applied after a boundary
+still counts toward the second and period it arrived in. While Redis is unreachable nothing is
+written, including the traffic counts and sets, and nothing is repaired later.
 
 ## Configuration
 
@@ -344,12 +370,12 @@ Run these from `gateway/`:
 ```bash
 ./gradlew build                      # compile, run all tests, build the jar
 ./gradlew test                       # all tests
-./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings, usage events, blocked set, admission policy)
-./gradlew :app:test                  # use case tests (tenant loading, request admission, blocking over the limit, overshoot, usage recorder, recording outage alerts)
+./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings, usage limits, usage events, blocked set, admission policy)
+./gradlew :app:test                  # use case tests (tenant loading, request admission, blocking over the limit, overshoot, tenant usage limits, usage recorder, recording outage alerts)
 ./gradlew :adapters:api:test         # tenant guard and 429 filter, problem body and stub controller tests
-./gradlew :adapters:infra:test       # Redis usage counter and record script (Testcontainers Redis), outage log lines
+./gradlew :adapters:infra:test       # Redis usage counter and record script incl. traffic counts, TTLs and near/over sets (Testcontainers Redis), outage log lines
 ./gradlew :adapters:persistence:test # tenants file adapter tests
-./gradlew :bootstrap:test            # configuration, startup, health with and without Redis, probes, business endpoint, usage writer, usage recording with and without Redis, quota enforcement (incl. Redis down), Redis stopped mid-run, port and architecture tests
+./gradlew :bootstrap:test            # configuration, startup, health with and without Redis, probes, business endpoint, usage writer, usage recording with and without Redis, traffic metrics recording, quota enforcement (incl. Redis down), Redis stopped mid-run, port and architecture tests
 ./gradlew :adapters:api:compileJava  # generate from the OpenAPI spec, compile
 ./gradlew :bootstrap:bootRun         # run from source on port 8080 (Redis not needed)
 java -jar bootstrap/build/libs/gateway.jar                    # run the built jar (reads ../config/tenants.json)

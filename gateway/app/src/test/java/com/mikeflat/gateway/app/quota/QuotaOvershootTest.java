@@ -3,6 +3,7 @@ package com.mikeflat.gateway.app.quota;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mikeflat.gateway.app.usage.SilentUsageRecordingAlerts;
+import com.mikeflat.gateway.app.usage.TenantUsageLimits;
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.Admission;
@@ -10,6 +11,7 @@ import com.mikeflat.gateway.domain.quota.AdmissionPolicy;
 import com.mikeflat.gateway.domain.quota.BlockedTenants;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
 import com.mikeflat.gateway.domain.quota.UsageEvent;
+import com.mikeflat.gateway.domain.quota.UsageLimits;
 import com.mikeflat.gateway.domain.quota.UsageOutcome;
 import com.mikeflat.gateway.domain.tenant.Tenant;
 import com.mikeflat.gateway.domain.tenant.TenantRegistry;
@@ -44,8 +46,9 @@ class QuotaOvershootTest {
         BlockedTenants blockedTenants = new BlockedTenants();
         UsageRecorder recorder = new UsageRecorder(
                 counter,
+                new TenantUsageLimits(registry, BRONZE_LIMIT_FIVE),
                 writer,
-                new BlockTenantsOverLimit(registry, BRONZE_LIMIT_FIVE, blockedTenants, CLOCK),
+                new BlockTenantsOverLimit(BRONZE_LIMIT_FIVE, blockedTenants, CLOCK),
                 new SilentUsageRecordingAlerts());
         return new AdmitBusinessCall(
                 new AdmissionPolicy(registry, blockedTenants, BRONZE_LIMIT_FIVE), recorder, BRONZE_LIMIT_FIVE, CLOCK);
@@ -92,7 +95,7 @@ class QuotaOvershootTest {
         private final Map<Long, Long> used = new HashMap<>();
 
         @Override
-        public long record(UsageEvent event) {
+        public long record(UsageEvent event, UsageLimits limits) {
             if (event.outcome() == UsageOutcome.ALLOWED) {
                 used.merge(event.tenantId(), 1L, Long::sum);
             }

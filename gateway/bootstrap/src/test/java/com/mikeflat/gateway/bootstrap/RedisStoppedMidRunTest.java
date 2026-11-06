@@ -2,7 +2,6 @@ package com.mikeflat.gateway.bootstrap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.mikeflat.gateway.app.usage.UsageRecorder;
 import com.mikeflat.gateway.domain.quota.BlockedTenants;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -22,6 +21,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.testcontainers.containers.GenericContainer;
@@ -31,6 +31,7 @@ import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+@Import(ObservedUsageCounterConfiguration.class)
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "quota.limits.bronze=5")
 @Testcontainers
 @ExtendWith(OutputCaptureExtension.class)
@@ -81,7 +82,7 @@ class RedisStoppedMidRunTest {
     private BlockedTenants blockedTenants;
 
     @Autowired
-    private UsageRecorder usageRecorder;
+    private ObservedUsageCounter usageCounter;
 
     private long period;
     private boolean redisPaused;
@@ -109,7 +110,7 @@ class RedisStoppedMidRunTest {
 
     @Test
     void outage_keeps_decisions_and_reports_redis_down(CapturedOutput output) throws Exception {
-        long failedBefore = usageRecorder.stats().failed();
+        long failedBefore = usageCounter.failed();
 
         HttpResponse<String> blocked = timedGetAs("1", REDIS_TIMEOUT);
         assertThat(blocked.statusCode()).isEqualTo(429);
@@ -119,7 +120,7 @@ class RedisStoppedMidRunTest {
         }
 
         assertHealthDownWithProbesUp();
-        Eventually.within(RECORDING_DEADLINE, () -> assertThat(usageRecorder.stats().failed())
+        Eventually.within(RECORDING_DEADLINE, () -> assertThat(usageCounter.failed())
                 .isGreaterThanOrEqualTo(failedBefore + 1 + REQUESTS_DURING_OUTAGE));
         assertThat(blockedTenants.isBlocked(2, period)).isFalse();
         String outageLog = logSinceOutage(output);
@@ -129,11 +130,11 @@ class RedisStoppedMidRunTest {
 
     @Test
     void recovery_resumes_counting_and_blocking(CapturedOutput output) throws Exception {
-        long failedBefore = usageRecorder.stats().failed();
+        long failedBefore = usageCounter.failed();
         for (int i = 0; i < REQUESTS_DURING_OUTAGE; i++) {
             assertThat(getAs("2").statusCode()).isEqualTo(200);
         }
-        Eventually.within(RECORDING_DEADLINE, () -> assertThat(usageRecorder.stats().failed())
+        Eventually.within(RECORDING_DEADLINE, () -> assertThat(usageCounter.failed())
                 .isGreaterThanOrEqualTo(failedBefore + REQUESTS_DURING_OUTAGE));
 
         unpauseRedis();
@@ -157,14 +158,14 @@ class RedisStoppedMidRunTest {
     @Test
     void period_rollover_during_outage_unblocks_without_new_blocks() throws Exception {
         long nextPeriod = period + 1;
-        long failedBefore = usageRecorder.stats().failed();
+        long failedBefore = usageCounter.failed();
         clock.set(Instant.ofEpochSecond(nextPeriod * PERIOD_SECONDS + SECONDS_INTO_PERIOD));
 
         for (int i = 0; i < BRONZE_LIMIT + 1; i++) {
             assertThat(timedGetAs("1", REDIS_TIMEOUT).statusCode()).isEqualTo(200);
         }
 
-        Eventually.within(RECORDING_DEADLINE, () -> assertThat(usageRecorder.stats().failed())
+        Eventually.within(RECORDING_DEADLINE, () -> assertThat(usageCounter.failed())
                 .isGreaterThanOrEqualTo(failedBefore + BRONZE_LIMIT + 1));
         assertThat(blockedTenants.isBlocked(1, nextPeriod)).isFalse();
         assertThat(blockedTenants.isBlocked(2, nextPeriod)).isFalse();
@@ -202,14 +203,14 @@ class RedisStoppedMidRunTest {
     private void sendRecordedRequestsUntilBlocked(String tenantId) throws Exception {
         long tenant = Long.parseLong(tenantId);
         for (int i = 0; i < BRONZE_LIMIT && !blockedTenants.isBlocked(tenant, period); i++) {
-            long recordedBefore = usageRecorder.stats().recorded();
+            long recordedBefore = usageCounter.recorded();
             int status = getAs(tenantId).statusCode();
             if (status == 429) {
                 break;
             }
             assertThat(status).isEqualTo(200);
             Eventually.within(RECORDING_DEADLINE,
-                    () -> assertThat(usageRecorder.stats().recorded()).isGreaterThan(recordedBefore));
+                    () -> assertThat(usageCounter.recorded()).isGreaterThan(recordedBefore));
         }
         Eventually.within(RECORDING_DEADLINE, () -> assertThat(blockedTenants.isBlocked(tenant, period)).isTrue());
     }

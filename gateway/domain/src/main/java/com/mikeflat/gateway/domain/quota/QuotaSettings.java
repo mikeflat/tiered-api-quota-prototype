@@ -58,8 +58,9 @@ public record QuotaSettings(Duration period, Map<Tier, Long> limits, int nearThr
         return limits.get(tier);
     }
 
-    public boolean reachesLimit(Tier tier, long used) {
-        return used >= limitOf(tier);
+    public UsageLimits limitsOf(Tier tier) {
+        long limit = limitOf(tier);
+        return new UsageLimits(limit, nearBoundary(limit));
     }
 
     public long nearBoundary(long limit) {
