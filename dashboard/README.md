@@ -1,15 +1,15 @@
 # Quota dashboard
 
-Admin dashboard for the Tiered Tenant Quota Prototype. Today it is a skeleton: an app shell
-with the heading "Quota dashboard", the Clean Architecture folder layout, enforced layering,
-tests, a dev server proxy and a container image. Polling, panels, the tenant grid and filters
-arrive with later changes.
+Admin dashboard for the Tiered Tenant Quota Prototype. It polls the gateway's snapshot and health
+endpoints and shows the app shell with its live-data states: loading, gateway unreachable,
+reconnected, quota enforcement degraded and metrics unavailable. The traffic panels, the tenant
+grid and its filters arrive with later changes.
 
 ## Stack
 
 - React + TypeScript (strict) + Vite, npm with a committed `package-lock.json`, Node `>=22`
 - [oxlint](https://oxc.rs/docs/guide/usage/linter) (config in `.oxlintrc.json`)
-- Vitest + React Testing Library in jsdom (`src/test/setup.ts`)
+- Vitest + React Testing Library in jsdom (`test/setup.ts`)
 - Plain CSS, no component library
 - Container: Node LTS build stage, unprivileged nginx runtime (`nginx/default.conf.template`)
 
@@ -22,6 +22,7 @@ Dependencies point inward only. `npm run lint` fails when a rule below is broken
 | `src/domain/` | domain (pure TypeScript): models, polling state machine, status/percent/trend logic | only `domain/` | `react`, `react-dom`, `application/`, `adapters/`, `ui/`; globals `fetch`, `XMLHttpRequest`, `window`, `document`, `localStorage`, `setTimeout`, `setInterval` (timers and clocks are ports) |
 | `src/application/` | use cases, hooks, ports | `domain/`, `react` | `adapters/`, `ui/`; `fetch`, `XMLHttpRequest` |
 | `src/adapters/api/` | outbound HTTP adapters implementing application ports | `domain/`, `application/` | `react`, `react-dom`, `ui/` |
+| `src/adapters/time/` | clock and timer adapter implementing the `Scheduler` port | `domain/`, `application/` | `react`, `react-dom`, `ui/` |
 | `src/ui/` (`App.tsx`, `index.css`), `src/ui/components/` | presentational UI | `domain/`, `application/`, `react` | `adapters/`; `fetch`, `XMLHttpRequest` (components never call `fetch`) |
 | `src/main.tsx` | composition root | everything | — |
 
@@ -30,7 +31,49 @@ construct adapters. The rules match relative import paths at any depth (`**/adap
 path aliases are configured, so do not add one that would bypass them.
 
 Empty layer folders are kept in git with a `.gitkeep` file. Delete a folder's `.gitkeep` when
-the first real file lands in it. Tests live next to the code as `*.test.ts(x)`.
+the first real file lands in it.
+
+## Tests
+
+Tests never sit next to the source. They live in `test/`, which mirrors `src/` folder by folder,
+with one `<module>.test.ts(x)` per tested module:
+
+| Folder | Contents |
+|---|---|
+| `test/domain/`, `test/application/`, `test/adapters/api/`, `test/adapters/time/`, `test/ui/`, `test/ui/components/` | tests of the module with the same path under `src/`, e.g. `src/domain/connection.ts` → `test/domain/connection.test.ts` |
+| `test/support/` | shared test doubles and fixtures: `ManualScheduler`, fake snapshot and health sources, sample snapshots, deferred promises |
+| `test/setup.ts` | Vitest setup (jest-dom matchers, cleanup) |
+
+Vitest only collects `test/**/*.test.{ts,tsx}`. `tsconfig.test.json` type-checks the tree as part of
+`npm run build`, and the layering lint rules of each `src/` folder also apply to its `test/`
+counterpart (a test in `test/domain/` may not import React, for example).
+
+## Live data and states
+
+`useDashboard()` (`src/application/`) runs two polls through the `Scheduler` port and returns one
+`DashboardView` that the UI components read:
+
+| Poll | Path | Every | Timeout |
+|---|---|---|---|
+| Snapshot | `GET /admin/snapshot` | 1 s | 2 s |
+| Health | `GET /actuator/health` | 5 s | 2 s |
+
+Each poll starts immediately on open, never overlaps itself (the next one starts 1 s / 5 s after
+the previous start, or right after a slower answer) and stops when the app unmounts. A snapshot
+poll fails on a network error, a timeout, a non-2xx status or a body without `period` /
+`tenants`; `"metrics":null` is a success.
+
+| State | Trigger | Shown |
+|---|---|---|
+| Loading | no snapshot received yet | "Loading dashboard…" instead of the regions, no numbers |
+| Gateway unreachable | 2 failed snapshot polls in a row | red banner; last data greyed out with "last updated N s ago"; tier controls disabled; polling continues |
+| Reconnected | first successful snapshot after unreachable | banner and greying removed, "Reconnected" for about 3 s |
+| Enforcement degraded | health reports `components.redis.status` `DOWN` (200 or 503) | yellow "Quota enforcement degraded: no new blocks, counting paused" banner |
+| Metrics unavailable | snapshot has `"metrics":null` | "Metrics unavailable" in the Traffic and Period totals regions; tier controls stay enabled |
+
+A failed health poll (gateway down, `502`) clears the degraded banner and never counts towards
+"unreachable". The states are covered by `test/ui/App.test.tsx` with fake sources. To see them
+against the real stack, start it and stop Redis or the gateway with the scripts in `/scripts`.
 
 ## Scripts
 

@@ -82,6 +82,16 @@ context: |
   (JUnit @Test / @ParameterizedTest methods and any named test functions; test classes keep
   their normal language naming, e.g. TenantRegistryTest).
 
+  Test layout rule (MANDATORY): test files never sit next to the source files they test.
+    - Gateway: tests stay in each Gradle module's src/test/java, in the same package as the
+      class under test (Gradle/Maven convention).
+    - Dashboard: tests live in dashboard/test/, which mirrors dashboard/src/ folder by folder
+      (src/domain/connection.ts -> test/domain/connection.test.ts); shared test doubles and
+      fixtures go in test/support/, the Vitest setup is test/setup.ts. Vitest collects only
+      test/**/*.test.{ts,tsx}; tsconfig.test.json type-checks the tree; each src/<layer>/**
+      lint override also covers test/<layer>/**, so tests obey the same layering rules.
+    - Generator: exempt for now (flat script, tests co-located in src/ as *.test.ts).
+
   Workflow rule (MANDATORY): never propose, suggest or start apply or archive automatically
   (no "next: /opsx:apply" or "/opsx:archive" prompts, buttons or follow-ups, and never run them
   unasked). Applying and archiving a change are always the user's personal choice; after

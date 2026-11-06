@@ -8,7 +8,7 @@
   },
   "overrides": [
     {
-      "files": ["src/domain/**"],
+      "files": ["src/domain/**", "test/domain/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -38,7 +38,7 @@
       }
     },
     {
-      "files": ["src/application/**"],
+      "files": ["src/application/**", "test/application/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -59,7 +59,7 @@
       }
     },
     {
-      "files": ["src/ui/**"],
+      "files": ["src/ui/**", "test/ui/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -80,7 +80,7 @@
       }
     },
     {
-      "files": ["src/adapters/**"],
+      "files": ["src/adapters/**", "test/adapters/**"],
       "rules": {
         "no-restricted-imports": [
           "error",

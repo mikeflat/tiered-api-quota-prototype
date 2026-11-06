@@ -1,9 +1,14 @@
-/* Plain CSS, no component library (FR-22). */
 :root {
   --text: #1f2328;
   --text-muted: #656d76;
   --bg: #ffffff;
   --border: #d0d7de;
+  --error-bg: #ffebe9;
+  --error-border: #cf222e;
+  --warning-bg: #fff8c5;
+  --warning-border: #bf8700;
+  --success-bg: #dafbe1;
+  --success-border: #1a7f37;
 
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 16px;
@@ -19,6 +24,12 @@
     --text-muted: #8d96a0;
     --bg: #0d1117;
     --border: #30363d;
+    --error-bg: #3c1618;
+    --error-border: #f85149;
+    --warning-bg: #3b2e05;
+    --warning-border: #d29922;
+    --success-bg: #0f2e1a;
+    --success-border: #3fb950;
   }
 }
 
@@ -55,4 +66,78 @@ body {
 
 .muted {
   color: var(--text-muted);
+}
+
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 1rem;
+}
+
+.banners:empty {
+  display: none;
+}
+
+.banner {
+  padding: 0.75rem 1rem;
+  border: 1px solid;
+  border-left-width: 4px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.banner-error {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+}
+
+.banner-warning {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+
+.banner-success {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+
+.loading-indicator {
+  color: var(--text-muted);
+}
+
+.last-updated {
+  margin: 0 0 1rem;
+}
+
+.data-regions {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  transition: opacity 0.2s;
+}
+
+.data-regions.is-stale {
+  opacity: 0.5;
+  filter: grayscale(1);
+}
+
+.region {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.region h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.region:last-child {
+  grid-column: 1 / -1;
+}
+
+.metrics-unavailable {
+  margin: 0;
 }

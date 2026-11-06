@@ -1,14 +1,8 @@
+import { useDashboard } from '../application/useDashboard.ts'
+import { DashboardScreen } from './components/DashboardScreen.tsx'
+
 function App() {
-  return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Quota dashboard</h1>
-      </header>
-      <main className="app-main">
-        <p className="muted">No data yet.</p>
-      </main>
-    </div>
-  )
+  return <DashboardScreen view={useDashboard()} />
 }
 
 export default App
