@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 import { DashboardPortsProvider } from '../../src/application/DashboardPorts.tsx'
 import { useTenantGrid } from '../../src/application/useTenantGrid.ts'
+import { initialTenantQuery } from '../../src/domain/tenantQuery.ts'
 import type { DashboardView } from '../../src/domain/dashboardView.ts'
 import type { GridRow, TenantGridView } from '../../src/domain/tenantGrid.ts'
 import { TierChangeRefused } from '../../src/domain/tierChange.ts'
@@ -28,6 +29,7 @@ function liveViewOf(snapshot: AdminSnapshot): DashboardView {
     connectionStatus: 'connected',
     enforcement: 'ok',
     secondsUntilReset: 15,
+    shownQuery: initialTenantQuery,
   }
 }
 
@@ -50,11 +52,10 @@ async function renderGrid(initial: AdminSnapshot = snapshotWithRow()) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <DashboardPortsProvider ports={ports}>{children}</DashboardPortsProvider>
   )
-  const hook = renderHook(({ view }: { view: DashboardView }) => useTenantGrid(view), {
+  const hook = renderHook(({ view }: { view: DashboardView }) => useTenantGrid(view, defaultTiers, initialTenantQuery), {
     wrapper,
     initialProps: { view: liveViewOf(initial) },
   })
-  await settle(() => tierAdministration.answerTiers(defaultTiers))
   return { scheduler, tierAdministration, hook }
 }
 

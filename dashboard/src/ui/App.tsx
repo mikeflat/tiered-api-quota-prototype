@@ -1,11 +1,14 @@
-import { useDashboard } from '../application/useDashboard.ts'
-import { useTenantGrid } from '../application/useTenantGrid.ts'
+import { useDashboardScreen } from '../application/useDashboardScreen.ts'
 import { DashboardScreen } from './components/DashboardScreen.tsx'
 
 function App() {
-  const view = useDashboard()
-  const { grid, changeTier } = useTenantGrid(view)
-  return <DashboardScreen view={view} grid={grid} onTierChange={changeTier} />
+  const { view, grid, filters, tenantActions, changeTier } = useDashboardScreen()
+  return (
+    <DashboardScreen
+      view={view}
+      tenants={{ grid, filters, actions: tenantActions, onTierChange: changeTier }}
+    />
+  )
 }
 
 export default App

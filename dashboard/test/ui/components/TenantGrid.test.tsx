@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { GridRow, TenantGridView } from '../../../src/domain/tenantGrid.ts'
+import type { GridRow, RowsGrid } from '../../../src/domain/tenantGrid.ts'
 import { TenantGrid } from '../../../src/ui/components/TenantGrid.tsx'
 import { defaultTiers } from '../../support/tiers.ts'
 
@@ -34,9 +34,21 @@ const blueBank = gridRow({
   usagePercent: 104,
 })
 
-function gridOf(...rows: GridRow[]): TenantGridView {
-  return { kind: 'rows', rows, shownCount: rows.length, total: 15 }
+function gridOf(...rows: GridRow[]): RowsGrid {
+  return {
+    kind: 'rows',
+    rows,
+    shownCount: rows.length,
+    total: 15,
+    pageNumber: 1,
+    pageCount: 2,
+    canPrevious: false,
+    canNext: true,
+    updating: false,
+  }
 }
+
+const noPaging = { onPrevious: () => {}, onNext: () => {}, onClearStatus: () => {} }
 
 function rowOf(name: string): HTMLElement {
   const header = screen.getByRole('rowheader', { name })
@@ -53,7 +65,7 @@ function selectorOf(name: string): HTMLSelectElement {
 
 describe('TenantGrid', () => {
   it('shows_headers_and_rows_in_order', () => {
-    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} />)
+    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} {...noPaging} />)
 
     expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
       'Tenant',
@@ -67,7 +79,7 @@ describe('TenantGrid', () => {
   })
 
   it('shows_usage_rejected_and_status_text', () => {
-    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} />)
+    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} {...noPaging} />)
 
     expect(rowOf('Acme Corp')).toHaveTextContent('85 / 100 (85%)')
     expect(within(rowOf('Acme Corp')).getByText('Near')).toHaveClass('status-warning')
@@ -80,7 +92,7 @@ describe('TenantGrid', () => {
     render(
       <TenantGrid
         grid={gridOf(gridRow({ used: null, rejected: null, status: null, usagePercent: null }))}
-        onTierChange={() => {}}
+        onTierChange={() => {}} {...noPaging}
       />,
     )
 
@@ -90,27 +102,27 @@ describe('TenantGrid', () => {
   })
 
   it('shows_no_tenants_for_empty_page', () => {
-    render(<TenantGrid grid={{ kind: 'rows', rows: [], shownCount: 0, total: 0 }} onTierChange={() => {}} />)
+    render(<TenantGrid grid={{ ...gridOf(), shownCount: 0, total: 0, pageCount: 1, canNext: false }} onTierChange={() => {}} {...noPaging} />)
 
     expect(screen.getByText('No tenants')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('shows_rows_unavailable_message', () => {
-    render(<TenantGrid grid={{ kind: 'unavailable' }} onTierChange={() => {}} />)
+    render(<TenantGrid grid={{ kind: 'unavailable', canClearStatus: true }} onTierChange={() => {}} {...noPaging} />)
 
-    expect(screen.getByText('Tenant rows unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Tenant rows unavailable: the status filter needs metrics')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('shows_count_of_total', () => {
-    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} />)
+    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} {...noPaging} />)
 
     expect(screen.getByText('Showing 2 of 15 tenants')).toBeInTheDocument()
   })
 
   it('selector_offers_tiers_with_limits_and_selects_current', () => {
-    render(<TenantGrid grid={gridOf(gridRow())} onTierChange={() => {}} />)
+    render(<TenantGrid grid={gridOf(gridRow())} onTierChange={() => {}} {...noPaging} />)
 
     const selector = selectorOf('Acme Corp')
     expect(within(selector).getAllByRole('option').map((option) => option.textContent)).toEqual([
@@ -123,7 +135,7 @@ describe('TenantGrid', () => {
 
   it('choosing_tier_reports_row_and_tier', async () => {
     const onTierChange = vi.fn()
-    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={onTierChange} />)
+    render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={onTierChange} {...noPaging} />)
 
     await userEvent.selectOptions(selectorOf('Blue Bank'), 'Gold')
 
@@ -134,7 +146,7 @@ describe('TenantGrid', () => {
     render(
       <TenantGrid
         grid={gridOf(gridRow({ tier: 'Gold', saving: true, selectorEnabled: false }), blueBank)}
-        onTierChange={() => {}}
+        onTierChange={() => {}} {...noPaging}
       />,
     )
 
@@ -147,7 +159,7 @@ describe('TenantGrid', () => {
 
   it('failed_row_shows_inline_error', () => {
     render(
-      <TenantGrid grid={gridOf(gridRow({ failure: { kind: 'notFound' } }), blueBank)} onTierChange={() => {}} />,
+      <TenantGrid grid={gridOf(gridRow({ failure: { kind: 'notFound' } }), blueBank)} onTierChange={() => {}} {...noPaging} />,
     )
 
     expect(within(rowOf('Acme Corp')).getByRole('alert')).toHaveTextContent('Tier change failed: tenant not found')
@@ -159,11 +171,49 @@ describe('TenantGrid', () => {
     render(
       <TenantGrid
         grid={gridOf(gridRow({ selectorEnabled: false }), { ...blueBank, selectorEnabled: false })}
-        onTierChange={() => {}}
+        onTierChange={() => {}} {...noPaging}
       />,
     )
 
     expect(selectorOf('Acme Corp')).toBeDisabled()
     expect(selectorOf('Blue Bank')).toBeDisabled()
+  })
+
+  it('updating_grid_is_greyed_and_marked', () => {
+    render(<TenantGrid grid={{ ...gridOf(gridRow()), updating: true }} onTierChange={() => {}} {...noPaging} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Updating…')
+    expect(screen.getByTestId('tenant-grid-body')).toHaveClass('is-updating')
+    expect(rowOf('Acme Corp')).toBeInTheDocument()
+  })
+
+  it('unavailable_rows_offer_clearing_status', async () => {
+    const onClearStatus = vi.fn()
+    render(
+      <TenantGrid
+        grid={{ kind: 'unavailable', canClearStatus: true }}
+        onTierChange={() => {}}
+        onPrevious={() => {}}
+        onNext={() => {}}
+        onClearStatus={onClearStatus}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear status filter' }))
+
+    expect(onClearStatus).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+  })
+
+  it('grid_shows_pager', async () => {
+    const onNext = vi.fn()
+    render(
+      <TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} {...noPaging} onNext={onNext} />,
+    )
+
+    expect(screen.getByRole('navigation', { name: 'Tenant pages' })).toHaveTextContent('Page 1 of 2')
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(onNext).toHaveBeenCalledOnce()
+    expect(screen.getByTestId('tenant-grid-body')).not.toHaveClass('is-updating')
   })
 })

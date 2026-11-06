@@ -1,5 +1,4 @@
 import type { DashboardView } from '../../domain/dashboardView.ts'
-import type { TenantGridView } from '../../domain/tenantGrid.ts'
 import { DataRegions } from './DataRegions.tsx'
 import { DegradedEnforcementBanner } from './DegradedEnforcementBanner.tsx'
 import { GatewayUnreachableBanner } from './GatewayUnreachableBanner.tsx'
@@ -7,16 +6,16 @@ import { HeaderStatus } from './HeaderStatus.tsx'
 import { LastUpdatedNote } from './LastUpdatedNote.tsx'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
 import { ReconnectedNotice } from './ReconnectedNotice.tsx'
+import type { TenantsRegionModel } from './TenantsRegion.tsx'
 
 const lastUpdatedNoteId = 'last-updated-note'
 
 interface DashboardScreenProps {
   readonly view: DashboardView
-  readonly grid: TenantGridView | null
-  readonly onTierChange: (tenantId: number, tier: string) => void
+  readonly tenants: TenantsRegionModel
 }
 
-export function DashboardScreen({ view, grid, onTierChange }: DashboardScreenProps) {
+export function DashboardScreen({ view, tenants }: DashboardScreenProps) {
   return (
     <div className="app">
       <header className="app-header">
@@ -43,8 +42,7 @@ export function DashboardScreen({ view, grid, onTierChange }: DashboardScreenPro
             <DataRegions
               stale={view.stale}
               metrics={view.snapshot?.metrics ?? null}
-              grid={grid}
-              onTierChange={onTierChange}
+              tenants={tenants}
               describedBy={view.stale ? lastUpdatedNoteId : undefined}
             />
           </>

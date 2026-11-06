@@ -2,6 +2,7 @@ import type { ConnectionState, ReceivedSnapshot } from './connection.ts'
 import type { EnforcementStatus } from './enforcement.ts'
 import { secondsUntilReset } from './resetCountdown.ts'
 import type { AdminSnapshot } from './snapshot.ts'
+import type { TenantQuery } from './tenantQuery.ts'
 
 export const reconnectedNoticeMillis = 3000
 
@@ -20,6 +21,7 @@ export interface DashboardView {
   readonly connectionStatus: ConnectionStatus
   readonly enforcement: EnforcementStatus
   readonly secondsUntilReset: number | null
+  readonly shownQuery: TenantQuery | null
 }
 
 export function dashboardViewOf(
@@ -42,6 +44,7 @@ export function dashboardViewOf(
     connectionStatus: connectionStatusOf(connection),
     enforcement,
     secondsUntilReset: resetCountdownOf(connection, now),
+    shownQuery: shown?.query ?? null,
   }
 }
 

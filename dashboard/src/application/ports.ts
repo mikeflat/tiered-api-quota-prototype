@@ -1,9 +1,10 @@
 import type { HealthReport } from '../domain/enforcement.ts'
 import type { AdminSnapshot } from '../domain/snapshot.ts'
+import type { TenantQuery } from '../domain/tenantQuery.ts'
 import type { ChangedTier, TierOption } from '../domain/tiers.ts'
 
 export interface SnapshotSource {
-  fetchSnapshot(signal: AbortSignal): Promise<AdminSnapshot>
+  fetchSnapshot(query: TenantQuery, signal: AbortSignal): Promise<AdminSnapshot>
 }
 
 export interface HealthSource {

@@ -30,7 +30,7 @@ Each item is meant to become one OpenSpec change. Names in backticks are suggest
 12. ✅ **Done** `dashboard-polling-and-states` — Build the app shell with polling for snapshot and health, and the unhappy states: loading, gateway unreachable, reconnected, enforcement degraded, metrics unavailable.
 13. ✅ **Done** `dashboard-traffic-panels` — Show the header (statuses, reset countdown), current allowed/rejected req/s with a 60-second SVG trend, period totals and near/over counts.
 14. ✅ **Done** `dashboard-tenant-grid` — Show a page of 10 tenants with usage, rejected count, status, and a tier selector with inline error and revert on failure.
-15. `dashboard-tenant-filters` — Add filter controls (name, id, tier, status) and page navigation to the grid, keeping filters and page across polls and disabling the status filter while metrics are unavailable.
+15. ✅ **Done** `dashboard-tenant-filters` — Add filter controls (name, id, tier, status) and page navigation to the grid, keeping filters and page across polls and disabling the status filter while metrics are unavailable.
 
 ## Phase 6: Demo readiness
 

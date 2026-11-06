@@ -8,6 +8,7 @@ import type {
   TenantStatus,
   TrafficMetrics,
 } from '../../domain/snapshot.ts'
+import { tenantPageSize, type TenantQuery } from '../../domain/tenantQuery.ts'
 import {
   arrayAt,
   asObject,
@@ -32,14 +33,34 @@ export class SnapshotRequestFailed extends Error {
 
 export function createHttpSnapshotSource(fetchFn: typeof fetch): SnapshotSource {
   return {
-    async fetchSnapshot(signal) {
-      const response = await fetchFn(snapshotPath, { signal, headers: { Accept: 'application/json' } })
+    async fetchSnapshot(query, signal) {
+      const response = await fetchFn(snapshotUrlOf(query), { signal, headers: { Accept: 'application/json' } })
       if (!response.ok) {
         throw new SnapshotRequestFailed(response.status)
       }
       return toAdminSnapshot(await readJson(response))
     },
   }
+}
+
+export function snapshotUrlOf(query: TenantQuery): string {
+  const { name, id, tier, status } = query.filters
+  const parameters = new URLSearchParams()
+  if (name !== '') {
+    parameters.set('name', name)
+  }
+  if (id !== null) {
+    parameters.set('id', String(id))
+  }
+  if (tier !== null) {
+    parameters.set('tier', tier)
+  }
+  if (status !== null) {
+    parameters.set('status', status)
+  }
+  parameters.set('page', String(query.page))
+  parameters.set('size', String(tenantPageSize))
+  return `${snapshotPath}?${parameters.toString()}`
 }
 
 export function toAdminSnapshot(json: unknown): AdminSnapshot {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { snapshotWith, snapshotWithoutMetrics } from '../../support/snapshots.ts'
 import { createHttpSnapshotSource, SnapshotRequestFailed } from '../../../src/adapters/api/httpSnapshotSource.ts'
+import { initialTenantQuery, noFilters, type TenantQuery } from '../../../src/domain/tenantQuery.ts'
 import { UnexpectedResponseBody } from '../../../src/adapters/api/json.ts'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -18,9 +19,9 @@ describe('httpSnapshotSource', () => {
   it('requests_admin_snapshot_with_signal', async () => {
     const { fetchFn, source } = sourceAnswering(jsonResponse(snapshotWith()))
 
-    await source.fetchSnapshot(signal)
+    await source.fetchSnapshot(initialTenantQuery, signal)
 
-    expect(fetchFn).toHaveBeenCalledWith('/admin/snapshot', {
+    expect(fetchFn).toHaveBeenCalledWith('/admin/snapshot?page=0&size=10', {
       signal,
       headers: { Accept: 'application/json' },
     })
@@ -30,13 +31,13 @@ describe('httpSnapshotSource', () => {
     const snapshot = snapshotWith()
     const { source } = sourceAnswering(jsonResponse(snapshot))
 
-    await expect(source.fetchSnapshot(signal)).resolves.toEqual(snapshot)
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).resolves.toEqual(snapshot)
   })
 
   it('null_metrics_are_kept_null', async () => {
     const { source } = sourceAnswering(jsonResponse(snapshotWithoutMetrics()))
 
-    await expect(source.fetchSnapshot(signal)).resolves.toMatchObject({ metrics: null })
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).resolves.toMatchObject({ metrics: null })
   })
 
   it('unavailable_rows_are_kept_null', async () => {
@@ -45,45 +46,45 @@ describe('httpSnapshotSource', () => {
     })
     const { source } = sourceAnswering(jsonResponse(body))
 
-    await expect(source.fetchSnapshot(signal)).resolves.toEqual(body)
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).resolves.toEqual(body)
   })
 
   it('server_error_rejects', async () => {
     const { source } = sourceAnswering(new Response('<html>Bad Gateway</html>', { status: 502 }))
 
-    await expect(source.fetchSnapshot(signal)).rejects.toBeInstanceOf(SnapshotRequestFailed)
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).rejects.toBeInstanceOf(SnapshotRequestFailed)
   })
 
   it('client_error_rejects', async () => {
     const { source } = sourceAnswering(jsonResponse({ title: 'Bad Request' }, 400))
 
-    await expect(source.fetchSnapshot(signal)).rejects.toBeInstanceOf(SnapshotRequestFailed)
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).rejects.toBeInstanceOf(SnapshotRequestFailed)
   })
 
   it('non_json_body_rejects', async () => {
     const { source } = sourceAnswering(new Response('<!doctype html>', { status: 200 }))
 
-    await expect(source.fetchSnapshot(signal)).rejects.toBeInstanceOf(UnexpectedResponseBody)
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).rejects.toBeInstanceOf(UnexpectedResponseBody)
   })
 
   it('body_without_period_rejects', async () => {
     const { metrics, tenants } = snapshotWith()
     const { source } = sourceAnswering(jsonResponse({ metrics, tenants }))
 
-    await expect(source.fetchSnapshot(signal)).rejects.toBeInstanceOf(UnexpectedResponseBody)
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).rejects.toBeInstanceOf(UnexpectedResponseBody)
   })
 
   it('body_without_tenants_rejects', async () => {
     const { period, metrics } = snapshotWith()
     const { source } = sourceAnswering(jsonResponse({ period, metrics }))
 
-    await expect(source.fetchSnapshot(signal)).rejects.toBeInstanceOf(UnexpectedResponseBody)
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).rejects.toBeInstanceOf(UnexpectedResponseBody)
   })
 
   it('network_error_rejects', async () => {
     const { source } = sourceAnswering(Promise.reject(new TypeError('Failed to fetch')))
 
-    await expect(source.fetchSnapshot(signal)).rejects.toBeInstanceOf(TypeError)
+    await expect(source.fetchSnapshot(initialTenantQuery, signal)).rejects.toBeInstanceOf(TypeError)
   })
 
   it('aborted_request_rejects', async () => {
@@ -94,10 +95,43 @@ describe('httpSnapshotSource', () => {
           init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
         }),
     )
-    const pending = createHttpSnapshotSource(fetchFn).fetchSnapshot(controller.signal)
+    const pending = createHttpSnapshotSource(fetchFn).fetchSnapshot(initialTenantQuery, controller.signal)
 
     controller.abort()
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('sends_set_filters_in_order', async () => {
+    const { fetchFn, source } = sourceAnswering(jsonResponse(snapshotWith()))
+    const query: TenantQuery = { filters: { name: 'co', id: 3, tier: 'Bronze', status: 'over' }, page: 1 }
+
+    await source.fetchSnapshot(query, signal)
+
+    expect(fetchFn.mock.calls[0]?.[0]).toBe('/admin/snapshot?name=co&id=3&tier=Bronze&status=over&page=1&size=10')
+  })
+
+  it('omits_empty_filters', async () => {
+    const { fetchFn, source } = sourceAnswering(jsonResponse(snapshotWith()))
+
+    await source.fetchSnapshot({ filters: { ...noFilters, tier: 'Gold' }, page: 0 }, signal)
+
+    expect(fetchFn.mock.calls[0]?.[0]).toBe('/admin/snapshot?tier=Gold&page=0&size=10')
+  })
+
+  it('encodes_name', async () => {
+    const { fetchFn, source } = sourceAnswering(jsonResponse(snapshotWith()))
+
+    await source.fetchSnapshot({ filters: { ...noFilters, name: 'co & sons' }, page: 0 }, signal)
+
+    expect(fetchFn.mock.calls[0]?.[0]).toBe('/admin/snapshot?name=co+%26+sons&page=0&size=10')
+  })
+
+  it('sends_page_and_size_always', async () => {
+    const { fetchFn, source } = sourceAnswering(jsonResponse(snapshotWith()))
+
+    await source.fetchSnapshot({ filters: noFilters, page: 4 }, signal)
+
+    expect(fetchFn.mock.calls[0]?.[0]).toBe('/admin/snapshot?page=4&size=10')
   })
 })

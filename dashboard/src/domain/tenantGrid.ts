@@ -1,3 +1,4 @@
+import { pageCountOf } from './pagination.ts'
 import type { TenantPage, TenantRow, TenantStatus } from './snapshot.ts'
 import type { RowChange, TierChangeFailure, TierChanges } from './tierChange.ts'
 import { usagePercent } from './tenantUsage.ts'
@@ -18,21 +19,51 @@ export interface GridRow {
   readonly selectorEnabled: boolean
 }
 
-export type TenantGridView =
-  | { readonly kind: 'unavailable' }
-  | { readonly kind: 'rows'; readonly rows: readonly GridRow[]; readonly shownCount: number; readonly total: number }
+export interface UnavailableGrid {
+  readonly kind: 'unavailable'
+  readonly canClearStatus: boolean
+}
 
-export function tenantGridOf(
-  page: TenantPage,
-  changes: TierChanges,
-  tiers: readonly TierOption[] | null,
-  controlsEnabled: boolean,
-): TenantGridView {
+export interface RowsGrid {
+  readonly kind: 'rows'
+  readonly rows: readonly GridRow[]
+  readonly shownCount: number
+  readonly total: number
+  readonly pageNumber: number
+  readonly pageCount: number
+  readonly canPrevious: boolean
+  readonly canNext: boolean
+  readonly updating: boolean
+}
+
+export type TenantGridView = UnavailableGrid | RowsGrid
+
+export interface TenantGridInputs {
+  readonly page: TenantPage
+  readonly changes: TierChanges
+  readonly tiers: readonly TierOption[] | null
+  readonly controlsEnabled: boolean
+  readonly updating: boolean
+}
+
+export function tenantGridOf({ page, changes, tiers, controlsEnabled, updating }: TenantGridInputs): TenantGridView {
   if (!page.rowsAvailable) {
-    return { kind: 'unavailable' }
+    return { kind: 'unavailable', canClearStatus: controlsEnabled }
   }
   const rows = (page.rows ?? []).map((row) => gridRowOf(row, changes, tiers, controlsEnabled))
-  return { kind: 'rows', rows, shownCount: rows.length, total: page.total ?? rows.length }
+  const total = page.total ?? rows.length
+  const pageCount = pageCountOf(total, page.size)
+  return {
+    kind: 'rows',
+    rows,
+    shownCount: rows.length,
+    total,
+    pageNumber: Math.min(page.page, pageCount - 1) + 1,
+    pageCount,
+    canPrevious: controlsEnabled && page.page > 0,
+    canNext: controlsEnabled && page.page < pageCount - 1,
+    updating,
+  }
 }
 
 function gridRowOf(

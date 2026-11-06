@@ -8,6 +8,9 @@ import { ManualScheduler } from '../support/manualScheduler.ts'
 import { snapshotWith } from '../support/snapshots.ts'
 import { DashboardPortsProvider } from '../../src/application/DashboardPorts.tsx'
 import { useDashboard } from '../../src/application/useDashboard.ts'
+import { initialTenantQuery, type TenantQuery } from '../../src/domain/tenantQuery.ts'
+
+const goldQuery: TenantQuery = { ...initialTenantQuery, filters: { ...initialTenantQuery.filters, tier: 'Gold' } }
 
 function renderDashboard() {
   const scheduler = new ManualScheduler(100_000)
@@ -17,7 +20,10 @@ function renderDashboard() {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <DashboardPortsProvider ports={{ snapshots, health, scheduler, tierAdministration }}>{children}</DashboardPortsProvider>
   )
-  const hook = renderHook(() => useDashboard(), { wrapper })
+  const hook = renderHook(({ query }: { query: TenantQuery }) => useDashboard(query), {
+    wrapper,
+    initialProps: { query: initialTenantQuery },
+  })
   return { scheduler, snapshots, health, tierAdministration, hook }
 }
 
@@ -116,5 +122,65 @@ describe('useDashboard', () => {
 
     expect(secondsAtOutage).toBe(2)
     expect(hook.result.current.lastUpdatedSecondsAgo).toBe(5)
+  })
+
+  it('poll_carries_query', () => {
+    const { snapshots } = renderDashboard()
+
+    expect(snapshots.latestQuery()).toBe(initialTenantQuery)
+  })
+
+  it('query_change_restarts_poll_at_once', async () => {
+    const { hook, scheduler, snapshots } = renderDashboard()
+    await settle(() => snapshots.answerLatest(snapshotWith()))
+    await settle(() => scheduler.advanceBy(300))
+
+    await settle(() => hook.rerender({ query: goldQuery }))
+
+    expect(snapshots.requestCount()).toBe(2)
+    expect(snapshots.latestQuery()).toBe(goldQuery)
+  })
+
+  it('query_change_cancels_request_in_flight_without_failure', async () => {
+    const { hook, scheduler, snapshots } = renderDashboard()
+    await settle(() => snapshots.answerLatest(snapshotWith()))
+    await settle(() => scheduler.advanceBy(1_000))
+    await settle(() => snapshots.failLatest())
+    await settle(() => scheduler.advanceBy(1_000))
+    const inFlight = snapshots.latest()
+
+    await settle(() => hook.rerender({ query: goldQuery }))
+
+    expect(inFlight.signal.aborted).toBe(true)
+    expect(snapshots.requestCount()).toBe(4)
+    expect(hook.result.current.gatewayUnreachable).toBe(false)
+    expect(hook.result.current.loading).toBe(false)
+  })
+
+  it('cadence_continues_from_restart', async () => {
+    const { hook, scheduler, snapshots } = renderDashboard()
+    await settle(() => snapshots.answerLatest(snapshotWith()))
+    await settle(() => scheduler.advanceBy(300))
+    await settle(() => hook.rerender({ query: goldQuery }))
+    await settle(() => snapshots.answerLatest(snapshotWith()))
+
+    await settle(() => scheduler.advanceBy(999))
+    expect(snapshots.requestCount()).toBe(2)
+
+    await settle(() => scheduler.advanceBy(1))
+    expect(snapshots.requestCount()).toBe(3)
+    expect(snapshots.latestQuery()).toBe(goldQuery)
+  })
+
+  it('shown_query_names_answered_request', async () => {
+    const { hook, snapshots } = renderDashboard()
+    await settle(() => snapshots.answerLatest(snapshotWith()))
+    expect(hook.result.current.shownQuery).toBe(initialTenantQuery)
+
+    await settle(() => hook.rerender({ query: goldQuery }))
+    expect(hook.result.current.shownQuery).toBe(initialTenantQuery)
+
+    await settle(() => snapshots.answerLatest(snapshotWith()))
+    expect(hook.result.current.shownQuery).toBe(goldQuery)
   })
 })

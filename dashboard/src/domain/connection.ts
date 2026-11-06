@@ -1,9 +1,11 @@
 import type { AdminSnapshot } from './snapshot.ts'
+import type { TenantQuery } from './tenantQuery.ts'
 
 export const failuresBeforeUnreachable = 2
 
 export interface ReceivedSnapshot {
   readonly snapshot: AdminSnapshot
+  readonly query: TenantQuery
   readonly receivedAt: number
 }
 
@@ -27,14 +29,19 @@ export interface Unreachable {
 export type ConnectionState = Loading | Live | Unreachable
 
 export type ConnectionEvent =
-  | { readonly kind: 'snapshotReceived'; readonly snapshot: AdminSnapshot; readonly at: number }
+  | {
+      readonly kind: 'snapshotReceived'
+      readonly snapshot: AdminSnapshot
+      readonly query: TenantQuery
+      readonly at: number
+    }
   | { readonly kind: 'snapshotFailed'; readonly at: number }
 
 export const initialConnectionState: ConnectionState = { kind: 'loading', consecutiveFailures: 0 }
 
 export function nextConnectionState(state: ConnectionState, event: ConnectionEvent): ConnectionState {
   if (event.kind === 'snapshotReceived') {
-    return afterSnapshotReceived(state, { snapshot: event.snapshot, receivedAt: event.at })
+    return afterSnapshotReceived(state, { snapshot: event.snapshot, query: event.query, receivedAt: event.at })
   }
   return afterSnapshotFailed(state)
 }

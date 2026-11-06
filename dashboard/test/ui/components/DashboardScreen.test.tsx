@@ -2,8 +2,11 @@ import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { DashboardView } from '../../../src/domain/dashboardView.ts'
 import type { TenantGridView } from '../../../src/domain/tenantGrid.ts'
+import { initialTenantQuery } from '../../../src/domain/tenantQuery.ts'
 import { metricsWith, minuteOfTraffic, snapshotWith, snapshotWithoutMetrics } from '../../support/snapshots.ts'
 import { DashboardScreen } from '../../../src/ui/components/DashboardScreen.tsx'
+import type { TenantsRegionModel } from '../../../src/ui/components/TenantsRegion.tsx'
+import { recordingActions } from '../../support/tenantQueryActions.ts'
 
 const liveView: DashboardView = {
   loading: false,
@@ -18,6 +21,7 @@ const liveView: DashboardView = {
   connectionStatus: 'connected',
   enforcement: 'ok',
   secondsUntilReset: 15,
+  shownQuery: initialTenantQuery,
 }
 
 const loadingView: DashboardView = {
@@ -35,13 +39,29 @@ function header(): HTMLElement {
   return screen.getByRole('banner')
 }
 
+const noTenants: TenantsRegionModel = {
+  grid: null,
+  filters: {
+    nameText: '',
+    idText: '',
+    idInvalid: false,
+    tier: null,
+    status: null,
+    tierOptions: ['Bronze', 'Silver', 'Gold'],
+    enabled: true,
+    statusEnabled: true,
+  },
+  actions: recordingActions(),
+  onTierChange: () => {},
+}
+
 function regionNamed(name: string): HTMLElement {
   return screen.getByRole('region', { name })
 }
 
 describe('DashboardScreen', () => {
   it('loading_view_shows_indicator_and_no_digits', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={loadingView} />)
+    render(<DashboardScreen tenants={noTenants} view={loadingView} />)
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading dashboard')
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
@@ -49,7 +69,7 @@ describe('DashboardScreen', () => {
   })
 
   it('live_view_shows_three_regions_without_banners', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={liveView} />)
+    render(<DashboardScreen tenants={noTenants} view={liveView} />)
 
     expect(regionNamed('Traffic')).toBeInTheDocument()
     expect(regionNamed('Period totals')).toBeInTheDocument()
@@ -59,7 +79,7 @@ describe('DashboardScreen', () => {
   })
 
   it('stale_view_greys_regions_and_shows_last_updated', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...liveView, gatewayUnreachable: true, stale: true, lastUpdatedSecondsAgo: 7 }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...liveView, gatewayUnreachable: true, stale: true, lastUpdatedSecondsAgo: 7 }} />)
 
     const regions = screen.getByTestId('data-regions')
     expect(regions).toHaveClass('is-stale')
@@ -68,7 +88,7 @@ describe('DashboardScreen', () => {
   })
 
   it('metrics_unavailable_marks_traffic_and_totals_only', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...liveView, snapshot: snapshotWithoutMetrics(), metricsAvailable: false }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...liveView, snapshot: snapshotWithoutMetrics(), metricsAvailable: false }} />)
 
     expect(regionNamed('Traffic')).toHaveTextContent('Metrics unavailable')
     expect(regionNamed('Period totals')).toHaveTextContent('Metrics unavailable')
@@ -76,7 +96,7 @@ describe('DashboardScreen', () => {
   })
 
   it('degraded_view_shows_yellow_banner_text', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...liveView, enforcementDegraded: true }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...liveView, enforcementDegraded: true }} />)
 
     const banner = screen.getByRole('alert')
     expect(banner).toHaveTextContent('Quota enforcement degraded: no new blocks, counting paused')
@@ -84,7 +104,7 @@ describe('DashboardScreen', () => {
   })
 
   it('reconnected_view_shows_notice', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...liveView, reconnectedNoticeVisible: true }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...liveView, reconnectedNoticeVisible: true }} />)
 
     expect(screen.getByRole('status')).toHaveTextContent('Reconnected')
   })
@@ -92,8 +112,7 @@ describe('DashboardScreen', () => {
   it('banners_render_above_regions', () => {
     render(
       <DashboardScreen
-        grid={null}
-        onTierChange={() => {}}
+        tenants={noTenants}
         view={{ ...liveView, gatewayUnreachable: true, stale: true, lastUpdatedSecondsAgo: 3, enforcementDegraded: true }}
       />,
     )
@@ -105,7 +124,7 @@ describe('DashboardScreen', () => {
   })
 
   it('header_shows_connecting_and_dash_while_loading', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={loadingView} />)
+    render(<DashboardScreen tenants={noTenants} view={loadingView} />)
 
     expect(header()).toHaveTextContent('Gateway Connecting')
     expect(header()).toHaveTextContent('Enforcement Unknown')
@@ -114,7 +133,7 @@ describe('DashboardScreen', () => {
   })
 
   it('header_shows_connected_ok_and_countdown_when_live', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={liveView} />)
+    render(<DashboardScreen tenants={noTenants} view={liveView} />)
 
     expect(header()).toHaveTextContent('Gateway Connected')
     expect(header()).toHaveTextContent('Enforcement OK')
@@ -124,8 +143,7 @@ describe('DashboardScreen', () => {
   it('header_shows_unreachable_and_dash_when_stale', () => {
     render(
       <DashboardScreen
-        grid={null}
-        onTierChange={() => {}}
+        tenants={noTenants}
         view={{
           ...liveView,
           gatewayUnreachable: true,
@@ -143,20 +161,20 @@ describe('DashboardScreen', () => {
   })
 
   it('header_shows_degraded_enforcement', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...liveView, enforcement: 'degraded', enforcementDegraded: true }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...liveView, enforcement: 'degraded', enforcementDegraded: true }} />)
 
     expect(header()).toHaveTextContent('Enforcement Degraded')
     expect(screen.getByText('Degraded')).toHaveClass('status-warning')
   })
 
   it('header_shows_unknown_enforcement', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...liveView, enforcement: 'unknown' }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...liveView, enforcement: 'unknown' }} />)
 
     expect(header()).toHaveTextContent('Enforcement Unknown')
   })
 
   it('loading_main_area_still_has_no_digits', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...loadingView, gatewayUnreachable: true, connectionStatus: 'unreachable' }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...loadingView, gatewayUnreachable: true, connectionStatus: 'unreachable' }} />)
 
     expect(screen.getByRole('main')).not.toHaveTextContent(/\d/)
     expect(header()).toHaveTextContent('Gateway Unreachable')
@@ -172,7 +190,7 @@ describe('DashboardScreen', () => {
       tenantsOver: 1,
     })
 
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...liveView, snapshot: snapshotWith({ metrics }) }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...liveView, snapshot: snapshotWith({ metrics }) }} />)
 
     expect(regionNamed('Traffic')).toHaveTextContent('Allowed 183 req/s')
     expect(regionNamed('Traffic')).toHaveTextContent('Rejected 12 req/s')
@@ -184,7 +202,7 @@ describe('DashboardScreen', () => {
   })
 
   it('metrics_unavailable_shows_no_digits_or_trend_in_traffic_and_totals', () => {
-    render(<DashboardScreen grid={null} onTierChange={() => {}} view={{ ...liveView, snapshot: snapshotWithoutMetrics(), metricsAvailable: false }} />)
+    render(<DashboardScreen tenants={noTenants} view={{ ...liveView, snapshot: snapshotWithoutMetrics(), metricsAvailable: false }} />)
 
     for (const name of ['Traffic', 'Period totals']) {
       expect(regionNamed(name)).toHaveTextContent('Metrics unavailable')
@@ -196,8 +214,7 @@ describe('DashboardScreen', () => {
   it('stale_view_keeps_last_numbers_greyed', () => {
     render(
       <DashboardScreen
-        grid={null}
-        onTierChange={() => {}}
+        tenants={noTenants}
         view={{
           ...liveView,
           gatewayUnreachable: true,
@@ -235,11 +252,37 @@ describe('DashboardScreen', () => {
       ],
       shownCount: 1,
       total: 1,
+      pageNumber: 1,
+      pageCount: 1,
+      canPrevious: false,
+      canNext: false,
+      updating: false,
     }
 
-    render(<DashboardScreen grid={grid} onTierChange={() => {}} view={liveView} />)
+    render(<DashboardScreen tenants={{ ...noTenants, grid }} view={liveView} />)
 
     expect(within(regionNamed('Tenants')).getByRole('table')).toHaveTextContent('Acme Corp')
     expect(regionNamed('Tenants')).toHaveTextContent('Showing 1 of 1 tenants')
+  })
+
+  it('tenants_region_shows_filters_above_grid', () => {
+    const grid: TenantGridView = {
+      kind: 'rows',
+      rows: [],
+      shownCount: 0,
+      total: 0,
+      pageNumber: 1,
+      pageCount: 1,
+      canPrevious: false,
+      canNext: false,
+      updating: false,
+    }
+
+    render(<DashboardScreen tenants={{ ...noTenants, grid }} view={liveView} />)
+
+    const filters = within(regionNamed('Tenants')).getByRole('form', { name: 'Tenant filters' })
+    const pages = within(regionNamed('Tenants')).getByRole('navigation', { name: 'Tenant pages' })
+    expect(filters.compareDocumentPosition(pages) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(regionNamed('Tenants')).toHaveTextContent('No tenants')
   })
 })

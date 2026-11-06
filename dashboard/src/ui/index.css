@@ -350,3 +350,68 @@ body {
   margin: 0.75rem 0 0;
   font-size: 0.875rem;
 }
+
+.tenant-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.filter,
+.filter-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.tenant-filters input,
+.tenant-filters select,
+.tenant-filters button,
+.pager button {
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+}
+
+.id-filter {
+  width: 6rem;
+}
+
+.id-filter[aria-invalid='true'] {
+  border-color: var(--error-border);
+}
+
+.filter-error {
+  color: var(--error-border);
+  font-size: 0.8rem;
+}
+
+.tenant-filters :disabled,
+.pager :disabled {
+  opacity: 0.6;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.tenant-grid-body.is-updating {
+  opacity: 0.5;
+}
+
+.updating {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+}

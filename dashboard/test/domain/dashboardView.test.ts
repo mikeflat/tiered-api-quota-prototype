@@ -2,17 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { snapshotWith, snapshotWithoutMetrics } from '../support/snapshots.ts'
 import type { ConnectionState } from '../../src/domain/connection.ts'
 import { dashboardViewOf } from '../../src/domain/dashboardView.ts'
+import { initialTenantQuery } from '../../src/domain/tenantQuery.ts'
 
 const snapshot = snapshotWith()
 
 const loading: ConnectionState = { kind: 'loading', consecutiveFailures: 0 }
 const live: ConnectionState = {
   kind: 'live',
-  latest: { snapshot, receivedAt: 10_000 },
+  latest: { snapshot, query: initialTenantQuery, receivedAt: 10_000 },
   consecutiveFailures: 0,
   reconnectedAt: null,
 }
-const unreachableWithData: ConnectionState = { kind: 'unreachable', last: { snapshot, receivedAt: 10_000 } }
+const unreachableWithData: ConnectionState = { kind: 'unreachable', last: { snapshot, query: initialTenantQuery, receivedAt: 10_000 } }
 const unreachableWithoutData: ConnectionState = { kind: 'unreachable', last: null }
 
 describe('dashboardViewOf', () => {
@@ -30,6 +31,7 @@ describe('dashboardViewOf', () => {
       connectionStatus: 'connecting',
       enforcement: 'unknown',
       secondsUntilReset: null,
+      shownQuery: null,
     })
   })
 
@@ -73,7 +75,10 @@ describe('dashboardViewOf', () => {
   })
 
   it('null_metrics_mark_metrics_unavailable_and_keep_controls_enabled', () => {
-    const withoutMetrics: ConnectionState = { ...live, latest: { snapshot: snapshotWithoutMetrics(), receivedAt: 10_000 } }
+    const withoutMetrics: ConnectionState = {
+      ...live,
+      latest: { snapshot: snapshotWithoutMetrics(), query: initialTenantQuery, receivedAt: 10_000 },
+    }
 
     expect(dashboardViewOf(withoutMetrics, 'degraded', 10_000)).toMatchObject({
       metricsAvailable: false,
@@ -129,5 +134,11 @@ describe('dashboardViewOf', () => {
   it('countdown_counts_down_with_now', () => {
     expect(dashboardViewOf(live, 'ok', 12_000).secondsUntilReset).toBe(13)
     expect(dashboardViewOf(live, 'ok', 40_000).secondsUntilReset).toBe(0)
+  })
+
+  it('view_exposes_shown_query', () => {
+    expect(dashboardViewOf(live, 'ok', 10_000).shownQuery).toBe(initialTenantQuery)
+    expect(dashboardViewOf(unreachableWithData, 'ok', 10_000).shownQuery).toBe(initialTenantQuery)
+    expect(dashboardViewOf(loading, 'ok', 0).shownQuery).toBeNull()
   })
 })

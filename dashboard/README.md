@@ -5,7 +5,7 @@ endpoints and shows a header with gateway and enforcement status and the reset c
 Traffic panel (current req/s and a 60-second trend) and the Period totals panel, together with the
 live-data states: loading, gateway unreachable, reconnected, quota enforcement degraded and metrics
 unavailable. The Tenants region shows a page of tenants with usage and status and lets the operator
-change a tenant's tier. Filters and page navigation arrive with a later change.
+change a tenant's tier, with name, id, tier and status filters and page navigation.
 
 ## Stack
 
@@ -52,16 +52,17 @@ counterpart (a test in `test/domain/` may not import React, for example).
 
 ## Live data and states
 
-`useDashboard()` (`src/application/`) runs two polls through the `Scheduler` port and returns one
+`useDashboard(query)` (`src/application/`) runs two polls through the `Scheduler` port and returns one
 `DashboardView` that the UI components read:
 
 | Poll | Path | Every | Timeout |
 |---|---|---|---|
-| Snapshot | `GET /admin/snapshot` | 1 s | 2 s |
+| Snapshot | `GET /admin/snapshot?…&page=…&size=10` (filters and page, see below) | 1 s | 2 s |
 | Health | `GET /actuator/health` | 5 s | 2 s |
 
 Each poll starts immediately on open, never overlaps itself (the next one starts 1 s / 5 s after
 the previous start, or right after a slower answer) and stops when the app unmounts. A snapshot
+poll restarts at once when the filters or page change. A snapshot
 poll fails on a network error, a timeout, a non-2xx status or a body without `period` /
 `tenants`; `"metrics":null` is a success.
 
@@ -97,12 +98,12 @@ stack, use the scripts in `/scripts`.
 
 ## Tenant grid and tier changes
 
-The Tenants region shows the snapshot's page of tenants (page 0, up to 10 rows sorted by name by
-the gateway) with the columns Tenant, ID, Tier, Used, Rejected and Status, and "Showing N of T
+The Tenants region shows the snapshot's page of tenants (up to 10 rows sorted by name by the
+gateway) with the columns Tenant, ID, Tier, Used, Rejected and Status, and "Showing N of T
 tenants" below. Used reads `used / limit (P%)`, with P rounded down and above 100 when a tenant
 overshot its limit; Status reads OK, Near or Over. With `"metrics":null` the rows keep name, id and
 tier and show "—" for Used, Rejected and Status; `rowsAvailable: false` shows "Tenant rows
-unavailable"; an empty page shows "No tenants".
+unavailable: the status filter needs metrics"; an empty page shows "No tenants".
 
 | Part | Behaviour |
 |---|---|
@@ -118,6 +119,31 @@ The per-row state is the pure reducer `src/domain/tierChange.ts`, the rows are b
 `TierAdministration` port (`src/adapters/api/httpTierAdministration.ts`). To try a tier change
 against the real stack (S6), with Redis stopped (S7) or with the gateway stopped (S8), use the
 scripts in `/scripts`.
+
+## Filters and pages
+
+Above the grid sit the filters Name (contains), ID (exact), Tier ("All tiers" plus the loaded tiers)
+and Status ("All statuses", OK, Near, Over) and a "Clear filters" button; below it the pager with
+Previous, "Page X of Y" and Next. Pages hold 10 tenants. Filters and page live in
+`useTenantQuery()` (`src/application/`) as one `TenantQuery` (`src/domain/tenantQuery.ts`) and
+are sent with every snapshot poll as `name`, `id`, `tier`, `status`, `page` and `size=10`,
+omitting empty filters (`src/adapters/api/httpSnapshotSource.ts`).
+
+| Rule | Behaviour |
+|---|---|
+| Typing | Name and ID are applied 300 ms after the last keystroke; Tier, Status, Clear and paging apply at once |
+| ID | must be a whole number from 1; anything else shows "ID must be a whole number from 1" and keeps the previously applied filters, so the gateway never answers `400` |
+| First page | any filter change requests page 1 again |
+| Kept | filters and page stay across polls, tier changes, reconnects and metrics outages |
+| Restart | a new query restarts the snapshot poll at once; the cancelled request is not a failed poll |
+| Updating | until the snapshot for the new query answers, the previous rows are greyed with "Updating…" |
+| Shrinking | when the shown page is past the last page (e.g. tenants leave "over" at a reset), the grid moves to the last page, or the first when nothing matches |
+| No metrics | the Status filter is disabled and keeps its value; with a status filter set the gateway reports rows unavailable and the grid offers "Clear status filter" |
+| Unreachable | filters, "Clear filters" and the pager are disabled and keep their values until a snapshot succeeds |
+
+`useDashboardScreen()` composes the query, the polls, the tier list and the grid for `App`. To
+filter by status "over" and page through live data (S5), or to try the status filter with Redis
+stopped (S7), run the stack and use the scripts in `/scripts`.
 
 ## Scripts
 

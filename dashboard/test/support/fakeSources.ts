@@ -1,6 +1,7 @@
 import type { HealthSource, SnapshotSource } from '../../src/application/ports.ts'
 import type { HealthReport } from '../../src/domain/enforcement.ts'
 import type { AdminSnapshot } from '../../src/domain/snapshot.ts'
+import type { TenantQuery } from '../../src/domain/tenantQuery.ts'
 import { type Deferred, deferred } from './deferred.ts'
 
 interface Request<T> {
@@ -39,8 +40,19 @@ class FakeSource<T> {
 }
 
 export class FakeSnapshotSource extends FakeSource<AdminSnapshot> implements SnapshotSource {
-  fetchSnapshot(signal: AbortSignal): Promise<AdminSnapshot> {
+  readonly queries: TenantQuery[] = []
+
+  fetchSnapshot(query: TenantQuery, signal: AbortSignal): Promise<AdminSnapshot> {
+    this.queries.push(query)
     return this.request(signal)
+  }
+
+  latestQuery(): TenantQuery {
+    const latest = this.queries.at(-1)
+    if (latest === undefined) {
+      throw new Error('no snapshot request was sent')
+    }
+    return latest
   }
 }
 

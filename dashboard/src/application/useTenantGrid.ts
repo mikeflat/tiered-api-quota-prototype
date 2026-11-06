@@ -1,11 +1,12 @@
 import { useEffect, useReducer, useRef } from 'react'
 import type { DashboardView } from '../domain/dashboardView.ts'
 import { tenantGridOf, type TenantGridView } from '../domain/tenantGrid.ts'
+import { sameQuery, type TenantQuery } from '../domain/tenantQuery.ts'
 import { nextTierChanges, noTierChanges } from '../domain/tierChange.ts'
+import type { TierOption } from '../domain/tiers.ts'
 import { useDashboardPorts } from './dashboardPortsContext.ts'
 import { requestWithTimeout } from './requestWithTimeout.ts'
 import { tierChangeFailureOf } from './tierChangeFailure.ts'
-import { useTiers } from './useTiers.ts'
 
 export const tierChangeTimeoutMillis = 2_000
 
@@ -14,9 +15,12 @@ export interface TenantGrid {
   readonly changeTier: (tenantId: number, tier: string) => void
 }
 
-export function useTenantGrid(view: DashboardView): TenantGrid {
+export function useTenantGrid(
+  view: DashboardView,
+  tiers: readonly TierOption[] | null,
+  query: TenantQuery,
+): TenantGrid {
   const { tierAdministration, scheduler } = useDashboardPorts()
-  const tiers = useTiers()
   const [changes, dispatch] = useReducer(nextTierChanges, noTierChanges)
   const changesInFlight = useRef(new Set<AbortController>())
   const page = view.snapshot?.tenants ?? null
@@ -37,7 +41,9 @@ export function useTenantGrid(view: DashboardView): TenantGrid {
     }
   }, [])
 
-  const grid = page === null ? null : tenantGridOf(page, changes, tiers, view.tierControlsEnabled)
+  const updating = view.shownQuery !== null && !sameQuery(view.shownQuery, query)
+  const grid =
+    page === null ? null : tenantGridOf({ page, changes, tiers, controlsEnabled: view.tierControlsEnabled, updating })
 
   const changeTier = (tenantId: number, tier: string) => {
     const row = grid?.kind === 'rows' ? grid.rows.find((candidate) => candidate.id === tenantId) : undefined

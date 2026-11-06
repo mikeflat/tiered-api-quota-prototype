@@ -134,6 +134,37 @@ async function liveWithTiers(harness: Harness, snapshot = firstPage()): Promise<
   await snapshotSucceeds(harness, snapshot)
 }
 
+const secondPageNames = ['Kilo Freight', 'Lumen Studio', 'Meridian Bank', 'Nova Retail', 'Orbit Telecom']
+
+function secondPage(): AdminSnapshot {
+  const rows = secondPageNames.map((name, index) =>
+    tenantRow({ id: 11 + index, name, used: index, rejected: 0, status: 'ok' }),
+  )
+  return snapshotWith({ tenants: { rowsAvailable: true, rows, total: 15, page: 1, size: 10 } })
+}
+
+function pageWith(tenants: Partial<AdminSnapshot['tenants']>): AdminSnapshot {
+  const base = firstPage()
+  return { ...base, tenants: { ...base.tenants, ...tenants } }
+}
+
+function filterNamed(name: 'Name' | 'ID' | 'Tier' | 'Status'): HTMLInputElement {
+  const role = name === 'Name' ? 'searchbox' : name === 'ID' ? 'textbox' : 'combobox'
+  return screen.getByRole(role, { name })
+}
+
+async function changeFilter(name: 'Name' | 'ID' | 'Tier' | 'Status', value: string): Promise<void> {
+  await settle(() => fireEvent.change(filterNamed(name), { target: { value } }))
+}
+
+async function press(name: string): Promise<void> {
+  await settle(() => fireEvent.click(screen.getByRole('button', { name })))
+}
+
+async function advance(harness: Harness, millis: number): Promise<void> {
+  await settle(() => harness.scheduler.advanceBy(millis))
+}
+
 function region(name: string): HTMLElement {
   return screen.getByRole('region', { name })
 }
@@ -614,5 +645,210 @@ describe('App', () => {
     expect(cells[0]).toHaveTextContent('1')
     expect(selectorOf('Acme Corp')).toHaveValue('Bronze')
     expect(cells.slice(2).map((cell) => cell.textContent)).toEqual(['—', '—', '—'])
+  })
+
+  it('first_request_carries_first_page_and_size', () => {
+    const harness = renderApp()
+
+    expect(harness.snapshots.latestQuery()).toEqual({
+      filters: { name: '', id: null, tier: null, status: null },
+      page: 0,
+    })
+  })
+
+  it('typed_name_is_sent_after_pause', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+
+    await changeFilter('Name', 'b')
+    await advance(harness, 100)
+    await changeFilter('Name', 'ba')
+    await advance(harness, 100)
+    await changeFilter('Name', 'bank')
+    await advance(harness, 299)
+    expect(harness.snapshots.queries.map((query) => query.filters.name)).toEqual([''])
+
+    await advance(harness, 1)
+    expect(harness.snapshots.latestQuery().filters.name).toBe('bank')
+    expect(harness.snapshots.queries.map((query) => query.filters.name)).toEqual(['', 'bank'])
+  })
+
+  it('invalid_id_is_never_sent', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+
+    await changeFilter('ID', 'acme')
+    await advance(harness, 1_000)
+    await snapshotSucceeds(harness, firstPage())
+    await changeFilter('ID', '0')
+    await advance(harness, 1_000)
+
+    expect(filterNamed('ID')).toHaveAccessibleDescription('ID must be a whole number from 1')
+    expect(harness.snapshots.queries.every((query) => query.filters.id === null)).toBe(true)
+    expect(rowOf('Acme Corp')).toBeInTheDocument()
+
+    await changeFilter('ID', '1')
+    await advance(harness, 300)
+    expect(harness.snapshots.latestQuery().filters.id).toBe(1)
+    expect(filterNamed('ID')).not.toHaveAccessibleDescription()
+  })
+
+  it('status_over_is_sent_at_once_and_kept_across_polls', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+
+    await changeFilter('Status', 'over')
+    expect(harness.snapshots.latestQuery().filters.status).toBe('over')
+
+    for (let poll = 0; poll < 3; poll++) {
+      await snapshotSucceeds(harness, firstPage())
+      await nextSecond(harness)
+      expect(harness.snapshots.latestQuery()).toMatchObject({ filters: { status: 'over' }, page: 0 })
+    }
+    expect(filterNamed('Status')).toHaveValue('over')
+  })
+
+  it('next_page_shows_remaining_tenants', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    expect(region('Tenants')).toHaveTextContent('Page 1 of 2')
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
+
+    await press('Next')
+    expect(harness.snapshots.latestQuery().page).toBe(1)
+    await snapshotSucceeds(harness, secondPage())
+
+    const table = within(region('Tenants')).getByRole('table')
+    expect(within(table).getAllByRole('rowheader').map((cell) => cell.textContent)).toEqual(secondPageNames)
+    expect(region('Tenants')).toHaveTextContent('Page 2 of 2')
+    expect(region('Tenants')).toHaveTextContent('Showing 5 of 15 tenants')
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+  })
+
+  it('filter_change_returns_to_first_page', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await press('Next')
+    await snapshotSucceeds(harness, secondPage())
+
+    await changeFilter('Tier', 'Silver')
+
+    expect(harness.snapshots.latestQuery()).toMatchObject({ filters: { tier: 'Silver' }, page: 0 })
+  })
+
+  it('grid_updates_only_after_answer_for_new_filters', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+
+    await press('Next')
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
+    expect(rowOf('Acme Corp')).toBeInTheDocument()
+
+    await snapshotSucceeds(harness, secondPage())
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument()
+    expect(screen.queryByRole('rowheader', { name: 'Acme Corp' })).not.toBeInTheDocument()
+  })
+
+  it('shrinking_result_moves_to_last_page', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await changeFilter('Status', 'over')
+    await snapshotSucceeds(harness, firstPage())
+    await press('Next')
+    await snapshotSucceeds(harness, secondPage())
+
+    await nextSecond(harness)
+    await snapshotSucceeds(harness, pageWith({ rows: [], total: 4, page: 1 }))
+
+    expect(harness.snapshots.latestQuery()).toMatchObject({ filters: { status: 'over' }, page: 0 })
+    await snapshotSucceeds(harness, pageWith({ rows: firstPage().tenants.rows?.slice(0, 4) ?? [], total: 4 }))
+    expect(region('Tenants')).toHaveTextContent('Page 1 of 1')
+  })
+
+  it('redis_down_disables_status_and_keeps_others', async () => {
+    const harness = renderApp()
+
+    await liveWithTiers(harness, { ...firstPage(), metrics: null })
+
+    expect(filterNamed('Status')).toBeDisabled()
+    expect(filterNamed('Name')).toBeEnabled()
+    expect(filterNamed('ID')).toBeEnabled()
+    expect(filterNamed('Tier')).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled()
+  })
+
+  it('redis_down_with_status_filter_offers_clear', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await changeFilter('Status', 'over')
+
+    await snapshotSucceeds(harness, {
+      ...pageWith({ rowsAvailable: false, rows: null, total: null }),
+      metrics: null,
+    })
+
+    expect(filterNamed('Status')).toBeDisabled()
+    expect(filterNamed('Status')).toHaveValue('over')
+    expect(region('Tenants')).toHaveTextContent('Tenant rows unavailable: the status filter needs metrics')
+
+    await press('Clear status filter')
+    expect(harness.snapshots.latestQuery().filters.status).toBeNull()
+    await snapshotSucceeds(harness, { ...firstPage(), metrics: null })
+    expect(rowOf('Acme Corp')).toBeInTheDocument()
+  })
+
+  it('filters_disabled_while_unreachable_and_kept_after_recovery', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await changeFilter('Name', 'bank')
+    await advance(harness, 300)
+    await snapshotSucceeds(harness, firstPage())
+    await nextSecond(harness)
+    await snapshotFails(harness)
+    await nextSecond(harness)
+    await snapshotFails(harness)
+
+    expect(filterNamed('Name')).toBeDisabled()
+    expect(filterNamed('Name')).toHaveValue('bank')
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+
+    await nextSecond(harness)
+    expect(harness.snapshots.latestQuery().filters.name).toBe('bank')
+    await snapshotSucceeds(harness, firstPage())
+    expect(filterNamed('Name')).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled()
+  })
+
+  it('clear_filters_returns_to_all_tenants', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await changeFilter('Tier', 'Gold')
+    await changeFilter('Name', 'acme')
+
+    await press('Clear filters')
+
+    expect(harness.snapshots.latestQuery()).toEqual({
+      filters: { name: '', id: null, tier: null, status: null },
+      page: 0,
+    })
+    expect(filterNamed('Name')).toHaveValue('')
+    expect(filterNamed('Tier')).toHaveValue('')
+  })
+
+  it('cancelled_request_is_not_a_failed_poll', async () => {
+    const harness = renderApp()
+    await liveWithTiers(harness)
+    await nextSecond(harness)
+    await snapshotFails(harness)
+    await nextSecond(harness)
+    const inFlight = harness.snapshots.latest()
+
+    await changeFilter('Tier', 'Gold')
+
+    expect(inFlight.signal.aborted).toBe(true)
+    expect(unreachableBanner()).not.toBeInTheDocument()
+    await snapshotSucceeds(harness, firstPage())
+    expect(unreachableBanner()).not.toBeInTheDocument()
   })
 })

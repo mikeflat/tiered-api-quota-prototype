@@ -1,0 +1,35 @@
+# Tasks
+
+Run checks only from `dashboard/` with `npm test`, `npm run lint` and `npm run build` (call `./node_modules/.bin/…` directly when the shell's working directory is in doubt); never start the dev server, nginx, the gateway or the stack. No code comments; test names in snake_case; tests under `dashboard/test/` mirroring `src/`. Module and type names follow design.md D-1.
+
+## 1. Domain: query, ID input, pagination, controls, view
+
+- [x] 1.1 Add `domain/tenantQuery.ts` (`TenantFilters`, `TenantQuery`, `tenantPageSize`, `noFilters`, `initialTenantQuery`, `withFilters`, `withPage`, `sameQuery`); verify with `test/domain/tenantQuery.test.ts` (`initial_query_has_no_filters_and_first_page`, `changing_filters_returns_to_first_page`, `with_page_keeps_filters`, `same_query_compares_filters_and_page`) via `npm test`
+- [x] 1.2 Add `domain/idInput.ts` (`parseIdInput`); verify with `test/domain/idInput.test.ts` (`blank_is_empty`, `whole_number_from_one_is_valid`, `surrounding_spaces_are_ignored`, `letters_are_invalid`, `zero_and_negative_are_invalid`, `decimal_and_exponent_are_invalid`, `unsafe_integer_is_invalid`) via `npm test`
+- [x] 1.3 Add `domain/pagination.ts` (`pageCountOf`, `correctedPageOf` per design D-4); verify with `test/domain/pagination.test.ts` (`page_count_rounds_up`, `page_count_is_at_least_one`, `page_within_range_needs_no_correction`, `page_past_end_moves_to_last_page`, `empty_result_moves_to_first_page`) via `npm test`
+- [x] 1.4 Add `domain/filterControls.ts` (`FilterDrafts`, `FilterControlsView`, `filterControlsOf`); verify with `test/domain/filterControls.test.ts` (`controls_show_drafts_and_applied_choices`, `invalid_id_draft_is_flagged`, `tier_options_come_from_tier_list_or_are_empty`, `controls_disabled_when_not_live`, `status_disabled_without_metrics_but_keeps_value`) via `npm test`
+- [x] 1.5 Add `query` to `ReceivedSnapshot` and `snapshotReceived` in `domain/connection.ts`, `shownQuery` to `DashboardView`, and the pagination / `updating` / `canClearStatus` fields to `domain/tenantGrid.ts` with the options-object signature; update `connection.test.ts`, `dashboardView.test.ts` and `tenantGrid.test.ts` fixtures and add (`received_snapshot_keeps_its_query`, `view_exposes_shown_query`, `grid_reports_page_number_and_count`, `pager_buttons_follow_position_and_controls`, `grid_marks_updating`, `unavailable_view_offers_clearing_status`); verify `npm test` and `npm run lint` pass
+
+## 2. Application: query hook, polling with query, screen composition
+
+- [x] 2.1 Change `SnapshotSource.fetchSnapshot` to take the query; `FakeSnapshotSource` records each request's query; `useDashboard(query)` per design D-2; update every caller and test; add to `useDashboard.test.tsx` (`poll_carries_query`, `query_change_restarts_poll_at_once`, `query_change_cancels_request_in_flight_without_failure`, `cadence_continues_from_restart`, `shown_query_names_answered_request`); verify `npm test`, `npm run lint` and `npm run build` pass (the adapter keeps ignoring the query until task 3.1)
+- [x] 2.2 Add `application/useTenantQuery.ts` per design D-3; verify with `test/application/useTenantQuery.test.tsx` using `ManualScheduler` (`typing_name_applies_after_three_hundred_ms`, `each_keystroke_restarts_the_pause`, `valid_id_is_applied`, `invalid_id_keeps_applied_query`, `tier_and_status_apply_at_once_on_first_page`, `choice_folds_in_pending_text`, `clear_filters_resets_drafts_and_query`, `clear_status_keeps_other_filters`, `next_and_previous_change_page`, `unmount_cancels_pending_apply`) via `npm test`
+- [x] 2.3 Change `useTenantGrid` to `useTenantGrid(view, tiers, query)` with `updating`, and add `application/useDashboardScreen.ts` (composition plus page correction per D-4); update `useTenantGrid.test.tsx` and add `test/application/useDashboardScreen.test.tsx` (`filters_flow_into_snapshot_requests`, `grid_is_updating_until_answer_for_new_query`, `page_past_end_is_corrected_once`, `status_control_disabled_while_metrics_unavailable`); verify `npm test` and `npm run lint` pass
+
+## 3. Outbound adapter: snapshot query string
+
+- [x] 3.1 Build the query string in `adapters/api/httpSnapshotSource.ts`; update `httpSnapshotSource.test.ts` (`requests_admin_snapshot_with_signal` now expects `/admin/snapshot?page=0&size=10`) and add (`sends_set_filters_in_order`, `omits_empty_filters`, `encodes_name`, `sends_page_and_size_always`); verify `npm test`, `npm run lint` and `npm run build` pass
+
+## 4. UI: filters, pager, grid states
+
+- [x] 4.1 Add `ui/components/TenantFilters.tsx` and `ui/components/Pager.tsx` with styles (light and dark) in `ui/index.css`; verify with `test/ui/components/TenantFilters.test.tsx` (`shows_labelled_controls_and_clear_button`, `tier_offers_all_and_loaded_tiers`, `typing_reports_text`, `choosing_tier_and_status_reports_choice`, `invalid_id_shows_message`, `disabled_controls_keep_values`, `status_disabled_without_metrics_shows_value`) and `test/ui/components/Pager.test.tsx` (`shows_page_of_count`, `previous_disabled_on_first_page`, `next_disabled_on_last_page`, `buttons_report_clicks`, `disabled_pager_disables_both`) via `npm test`
+- [x] 4.2 Extend `TenantGrid` with the pager, the "Updating…" marker and `is-updating` greying, and the unavailable message with "Clear status filter"; render `TenantFilters` above the grid in the Tenants region; `App` uses `useDashboardScreen()`; extend `TenantGrid.test.tsx` (`updating_grid_is_greyed_and_marked`, `unavailable_rows_offer_clearing_status`, `grid_shows_pager`) and `DashboardScreen.test.tsx` (`tenants_region_shows_filters_above_grid`); verify `npm test`, `npm run lint` and `npm run build` pass
+
+## 5. Integration through the real App
+
+- [x] 5.1 Extend `test/ui/App.test.tsx` driving the real `App` with fake sources, `FakeTierAdministration` and `ManualScheduler`, one test per spec scenario group (`first_request_carries_first_page_and_size`, `typed_name_is_sent_after_pause`, `invalid_id_is_never_sent`, `status_over_is_sent_at_once_and_kept_across_polls`, `next_page_shows_remaining_tenants`, `filter_change_returns_to_first_page`, `grid_updates_only_after_answer_for_new_filters`, `shrinking_result_moves_to_last_page`, `redis_down_disables_status_and_keeps_others`, `redis_down_with_status_filter_offers_clear`, `filters_disabled_while_unreachable_and_kept_after_recovery`, `clear_filters_returns_to_all_tenants`, `cancelled_request_is_not_a_failed_poll`); verify via `npm test`
+
+## 6. Documentation and final checks
+
+- [x] 6.1 Update `dashboard/README.md`: intro mentions filters and paging, the "Live data and states" poll table notes the query parameters and the restart on change, and a short "Filters and pages" section (controls, 300 ms pause, ID rule, page size 10, first page on change, page correction, "Updating…", status filter without metrics, behaviour while unreachable; manual S5/S7 checks left to the user with the stack scripts); verify the README matches the implemented file names and texts
+- [x] 6.2 Run `npm run lint`, `npm test` and `npm run build` in `dashboard/` together and confirm all pass; confirm `openspec validate dashboard-tenant-filters --strict` passes
