@@ -1,9 +1,10 @@
 # Quota dashboard
 
 Admin dashboard for the Tiered Tenant Quota Prototype. It polls the gateway's snapshot and health
-endpoints and shows the app shell with its live-data states: loading, gateway unreachable,
-reconnected, quota enforcement degraded and metrics unavailable. The traffic panels, the tenant
-grid and its filters arrive with later changes.
+endpoints and shows a header with gateway and enforcement status and the reset countdown, the
+Traffic panel (current req/s and a 60-second trend) and the Period totals panel, together with the
+live-data states: loading, gateway unreachable, reconnected, quota enforcement degraded and metrics
+unavailable. The tenant grid and its filters arrive with later changes.
 
 ## Stack
 
@@ -74,6 +75,24 @@ poll fails on a network error, a timeout, a non-2xx status or a body without `pe
 A failed health poll (gateway down, `502`) clears the degraded banner and never counts towards
 "unreachable". The states are covered by `test/ui/App.test.tsx` with fake sources. To see them
 against the real stack, start it and stop Redis or the gateway with the scripts in `/scripts`.
+
+## Header and traffic panels
+
+| Part | Shows | Source |
+|---|---|---|
+| Header: Gateway | Connecting (no snapshot yet), Connected, Unreachable (2 failed snapshot polls) | connection state |
+| Header: Enforcement | OK (Redis `UP`), Degraded (Redis `DOWN`), Unknown (no health answer yet or health poll failed) | health poll |
+| Header: Resets in | `period.secondsLeft` minus whole seconds since that snapshot arrived, as `m:ss` or `h:mm:ss`; "—" before the first snapshot and while the gateway is unreachable | snapshot `period` |
+| Traffic | allowed and rejected req/s of the newest `perSecond` entry ("—" without entries), and an SVG trend of all 60 entries with both lines on one scale from 0 | `metrics.perSecond` |
+| Period totals | allowed and rejected totals of the period, tenants near and over their limit | `metrics.totals`, `tenantsNear`, `tenantsOver` |
+
+The countdown uses the gateway's `secondsLeft`, not `endsAt` against the browser clock, so a skewed
+browser clock can't shift it; it works while Redis is down because the period needs no Redis. With
+`"metrics":null` both panels show only "Metrics unavailable". While the gateway is unreachable they
+keep the last numbers and trend, greyed out. The arithmetic lives in `src/domain/`
+(`resetCountdown.ts`, `trafficSummary.ts`, `trendGeometry.ts`); formatting in `src/ui/format.ts`.
+To watch the countdown restart (S3), Redis outages (S7) and gateway outages (S8) against the real
+stack, use the scripts in `/scripts`.
 
 ## Scripts
 

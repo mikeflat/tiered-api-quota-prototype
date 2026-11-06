@@ -1,8 +1,11 @@
 import type { ConnectionState, ReceivedSnapshot } from './connection.ts'
 import type { EnforcementStatus } from './enforcement.ts'
+import { secondsUntilReset } from './resetCountdown.ts'
 import type { AdminSnapshot } from './snapshot.ts'
 
 export const reconnectedNoticeMillis = 3000
+
+export type ConnectionStatus = 'connecting' | 'connected' | 'unreachable'
 
 export interface DashboardView {
   readonly loading: boolean
@@ -14,6 +17,9 @@ export interface DashboardView {
   readonly enforcementDegraded: boolean
   readonly metricsAvailable: boolean
   readonly tierControlsEnabled: boolean
+  readonly connectionStatus: ConnectionStatus
+  readonly enforcement: EnforcementStatus
+  readonly secondsUntilReset: number | null
 }
 
 export function dashboardViewOf(
@@ -33,7 +39,29 @@ export function dashboardViewOf(
     enforcementDegraded: enforcement === 'degraded',
     metricsAvailable: shown !== null && shown.snapshot.metrics !== null,
     tierControlsEnabled: connection.kind === 'live',
+    connectionStatus: connectionStatusOf(connection),
+    enforcement,
+    secondsUntilReset: resetCountdownOf(connection, now),
   }
+}
+
+function connectionStatusOf(connection: ConnectionState): ConnectionStatus {
+  switch (connection.kind) {
+    case 'loading':
+      return 'connecting'
+    case 'live':
+      return 'connected'
+    case 'unreachable':
+      return 'unreachable'
+  }
+}
+
+function resetCountdownOf(connection: ConnectionState, now: number): number | null {
+  if (connection.kind !== 'live') {
+    return null
+  }
+  const { snapshot, receivedAt } = connection.latest
+  return secondsUntilReset(snapshot.period, receivedAt, now)
 }
 
 function shownSnapshot(connection: ConnectionState): ReceivedSnapshot | null {

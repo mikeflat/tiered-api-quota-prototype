@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { DashboardView } from '../../../src/domain/dashboardView.ts'
-import { snapshotWith, snapshotWithoutMetrics } from '../../support/snapshots.ts'
+import { metricsWith, minuteOfTraffic, snapshotWith, snapshotWithoutMetrics } from '../../support/snapshots.ts'
 import { DashboardScreen } from '../../../src/ui/components/DashboardScreen.tsx'
 
 const liveView: DashboardView = {
@@ -14,6 +14,9 @@ const liveView: DashboardView = {
   enforcementDegraded: false,
   metricsAvailable: true,
   tierControlsEnabled: true,
+  connectionStatus: 'connected',
+  enforcement: 'ok',
+  secondsUntilReset: 15,
 }
 
 const loadingView: DashboardView = {
@@ -22,6 +25,13 @@ const loadingView: DashboardView = {
   snapshot: null,
   metricsAvailable: false,
   tierControlsEnabled: false,
+  connectionStatus: 'connecting',
+  enforcement: 'unknown',
+  secondsUntilReset: null,
+}
+
+function header(): HTMLElement {
+  return screen.getByRole('banner')
 }
 
 function regionNamed(name: string): HTMLElement {
@@ -89,5 +99,111 @@ describe('DashboardScreen', () => {
     for (const banner of screen.getAllByRole('alert')) {
       expect(banner.compareDocumentPosition(regions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
+  })
+
+  it('header_shows_connecting_and_dash_while_loading', () => {
+    render(<DashboardScreen view={loadingView} />)
+
+    expect(header()).toHaveTextContent('Gateway Connecting')
+    expect(header()).toHaveTextContent('Enforcement Unknown')
+    expect(header()).toHaveTextContent('Resets in —')
+    expect(header()).not.toHaveTextContent(/\d/)
+  })
+
+  it('header_shows_connected_ok_and_countdown_when_live', () => {
+    render(<DashboardScreen view={liveView} />)
+
+    expect(header()).toHaveTextContent('Gateway Connected')
+    expect(header()).toHaveTextContent('Enforcement OK')
+    expect(header()).toHaveTextContent('Resets in 0:15')
+  })
+
+  it('header_shows_unreachable_and_dash_when_stale', () => {
+    render(
+      <DashboardScreen
+        view={{
+          ...liveView,
+          gatewayUnreachable: true,
+          stale: true,
+          lastUpdatedSecondsAgo: 7,
+          connectionStatus: 'unreachable',
+          secondsUntilReset: null,
+        }}
+      />,
+    )
+
+    expect(header()).toHaveTextContent('Gateway Unreachable')
+    expect(header()).toHaveTextContent('Resets in —')
+    expect(screen.getByText('Unreachable')).toHaveClass('status-error')
+  })
+
+  it('header_shows_degraded_enforcement', () => {
+    render(<DashboardScreen view={{ ...liveView, enforcement: 'degraded', enforcementDegraded: true }} />)
+
+    expect(header()).toHaveTextContent('Enforcement Degraded')
+    expect(screen.getByText('Degraded')).toHaveClass('status-warning')
+  })
+
+  it('header_shows_unknown_enforcement', () => {
+    render(<DashboardScreen view={{ ...liveView, enforcement: 'unknown' }} />)
+
+    expect(header()).toHaveTextContent('Enforcement Unknown')
+  })
+
+  it('loading_main_area_still_has_no_digits', () => {
+    render(<DashboardScreen view={{ ...loadingView, gatewayUnreachable: true, connectionStatus: 'unreachable' }} />)
+
+    expect(screen.getByRole('main')).not.toHaveTextContent(/\d/)
+    expect(header()).toHaveTextContent('Gateway Unreachable')
+  })
+
+  it('live_view_shows_traffic_and_totals_numbers', () => {
+    const metrics = metricsWith({
+      perSecond: minuteOfTraffic(6_000_044, (secondsAgo) =>
+        secondsAgo === 0 ? { allowed: 183, rejected: 12 } : { allowed: 100, rejected: 0 },
+      ),
+      totals: { allowed: 12_045, rejected: 731 },
+      tenantsNear: 2,
+      tenantsOver: 1,
+    })
+
+    render(<DashboardScreen view={{ ...liveView, snapshot: snapshotWith({ metrics }) }} />)
+
+    expect(regionNamed('Traffic')).toHaveTextContent('Allowed 183 req/s')
+    expect(regionNamed('Traffic')).toHaveTextContent('Rejected 12 req/s')
+    expect(within(regionNamed('Traffic')).getByRole('img', { name: /last 60 seconds/ })).toBeInTheDocument()
+    expect(regionNamed('Period totals')).toHaveTextContent('Allowed 12,045')
+    expect(regionNamed('Period totals')).toHaveTextContent('Rejected 731')
+    expect(regionNamed('Period totals')).toHaveTextContent('Near limit 2')
+    expect(regionNamed('Period totals')).toHaveTextContent('Over limit 1')
+  })
+
+  it('metrics_unavailable_shows_no_digits_or_trend_in_traffic_and_totals', () => {
+    render(<DashboardScreen view={{ ...liveView, snapshot: snapshotWithoutMetrics(), metricsAvailable: false }} />)
+
+    for (const name of ['Traffic', 'Period totals']) {
+      expect(regionNamed(name)).toHaveTextContent('Metrics unavailable')
+      expect(regionNamed(name)).not.toHaveTextContent(/\d/)
+    }
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('stale_view_keeps_last_numbers_greyed', () => {
+    render(
+      <DashboardScreen
+        view={{
+          ...liveView,
+          gatewayUnreachable: true,
+          stale: true,
+          lastUpdatedSecondsAgo: 4,
+          connectionStatus: 'unreachable',
+          secondsUntilReset: null,
+        }}
+      />,
+    )
+
+    expect(screen.getByTestId('data-regions')).toHaveClass('is-stale')
+    expect(regionNamed('Traffic')).toHaveTextContent('Allowed 3 req/s')
+    expect(regionNamed('Period totals')).toHaveTextContent('Allowed 120')
   })
 })

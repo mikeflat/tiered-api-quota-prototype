@@ -27,6 +27,9 @@ describe('dashboardViewOf', () => {
       enforcementDegraded: false,
       metricsAvailable: false,
       tierControlsEnabled: false,
+      connectionStatus: 'connecting',
+      enforcement: 'unknown',
+      secondsUntilReset: null,
     })
   })
 
@@ -87,5 +90,44 @@ describe('dashboardViewOf', () => {
 
   it('unreachable_disables_tier_controls', () => {
     expect(dashboardViewOf(unreachableWithData, 'ok', 11_000).tierControlsEnabled).toBe(false)
+  })
+
+  it('loading_is_connecting_without_countdown', () => {
+    expect(dashboardViewOf(loading, 'ok', 0)).toMatchObject({ connectionStatus: 'connecting', secondsUntilReset: null })
+    expect(dashboardViewOf(unreachableWithoutData, 'ok', 0)).toMatchObject({
+      connectionStatus: 'unreachable',
+      secondsUntilReset: null,
+    })
+  })
+
+  it('live_is_connected_with_countdown', () => {
+    expect(dashboardViewOf(live, 'ok', 10_000)).toMatchObject({ connectionStatus: 'connected', secondsUntilReset: 15 })
+  })
+
+  it('one_failure_stays_connected', () => {
+    const oneFailure: ConnectionState = { ...live, consecutiveFailures: 1 }
+
+    expect(dashboardViewOf(oneFailure, 'ok', 11_000)).toMatchObject({
+      connectionStatus: 'connected',
+      secondsUntilReset: 14,
+    })
+  })
+
+  it('unreachable_has_no_countdown', () => {
+    expect(dashboardViewOf(unreachableWithData, 'ok', 11_000)).toMatchObject({
+      connectionStatus: 'unreachable',
+      secondsUntilReset: null,
+    })
+  })
+
+  it('enforcement_status_is_passed_through', () => {
+    expect(dashboardViewOf(live, 'ok', 10_000).enforcement).toBe('ok')
+    expect(dashboardViewOf(live, 'degraded', 10_000).enforcement).toBe('degraded')
+    expect(dashboardViewOf(loading, 'unknown', 0).enforcement).toBe('unknown')
+  })
+
+  it('countdown_counts_down_with_now', () => {
+    expect(dashboardViewOf(live, 'ok', 12_000).secondsUntilReset).toBe(13)
+    expect(dashboardViewOf(live, 'ok', 40_000).secondsUntilReset).toBe(0)
   })
 })

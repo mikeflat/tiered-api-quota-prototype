@@ -1,10 +1,26 @@
-import type { AdminSnapshot, TrafficMetrics } from '../../src/domain/snapshot.ts'
+import type { AdminSnapshot, SecondTraffic, TrafficMetrics } from '../../src/domain/snapshot.ts'
+
+export interface SecondCounts {
+  readonly allowed: number
+  readonly rejected: number
+}
+
+export function minuteOfTraffic(newestSecond: number, countsAt: (secondsAgo: number) => SecondCounts): SecondTraffic[] {
+  return Array.from({ length: 60 }, (_, index) => {
+    const secondsAgo = 59 - index
+    return { second: newestSecond - secondsAgo, ...countsAt(secondsAgo) }
+  })
+}
 
 export const healthyMetrics: TrafficMetrics = {
   perSecond: [{ second: 6_000_044, allowed: 3, rejected: 1 }],
   totals: { allowed: 120, rejected: 7 },
   tenantsNear: 2,
   tenantsOver: 1,
+}
+
+export function metricsWith(overrides: Partial<TrafficMetrics> = {}): TrafficMetrics {
+  return { ...healthyMetrics, ...overrides }
 }
 
 export function snapshotWith(overrides: Partial<AdminSnapshot> = {}): AdminSnapshot {

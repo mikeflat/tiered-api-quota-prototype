@@ -2,6 +2,7 @@ import type { DashboardView } from '../../domain/dashboardView.ts'
 import { DataRegions } from './DataRegions.tsx'
 import { DegradedEnforcementBanner } from './DegradedEnforcementBanner.tsx'
 import { GatewayUnreachableBanner } from './GatewayUnreachableBanner.tsx'
+import { HeaderStatus } from './HeaderStatus.tsx'
 import { LastUpdatedNote } from './LastUpdatedNote.tsx'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
 import { ReconnectedNotice } from './ReconnectedNotice.tsx'
@@ -13,6 +14,11 @@ export function DashboardScreen({ view }: { view: DashboardView }) {
     <div className="app">
       <header className="app-header">
         <h1>Quota dashboard</h1>
+        <HeaderStatus
+          connection={view.connectionStatus}
+          enforcement={view.enforcement}
+          secondsUntilReset={view.secondsUntilReset}
+        />
       </header>
       <div className="banners">
         {view.gatewayUnreachable && <GatewayUnreachableBanner />}
@@ -29,7 +35,7 @@ export function DashboardScreen({ view }: { view: DashboardView }) {
             )}
             <DataRegions
               stale={view.stale}
-              metricsAvailable={view.metricsAvailable}
+              metrics={view.snapshot?.metrics ?? null}
               describedBy={view.stale ? lastUpdatedNoteId : undefined}
             />
           </>
