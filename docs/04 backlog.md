@@ -34,7 +34,7 @@ Each item is meant to become one OpenSpec change. Names in backticks are suggest
 
 ## Phase 6: Demo readiness
 
-16. `calibration-and-demo` — Tune tier limits and generator weights so every period shows tenants in all three states, and write a README with how to run the stack and demo the scenarios using the component scripts (stop Redis, stop the gateway, change a tier, filter by status).
+16. ✅ **Done** `calibration-and-demo` — Tune tier limits and generator weights so every period shows tenants in all three states, and write a README with how to run the stack and demo the scenarios using the component scripts (stop Redis, stop the gateway, change a tier, filter by status).
 
 ## Enhancements (not planned)
 

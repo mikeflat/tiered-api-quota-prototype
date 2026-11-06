@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { TrafficTrend } from '../../../src/ui/components/TrafficTrend.tsx'
 import { minuteOfTraffic } from '../../support/snapshots.ts'
 
@@ -40,5 +40,38 @@ describe('TrafficTrend', () => {
     const allowedPoints = (container.querySelector('.trend-line-allowed')?.getAttribute('points') ?? '').split(' ')
     expect(allowedPoints.every((point) => point.endsWith(',120'))).toBe(true)
     expect(screen.getByRole('img')).toHaveAccessibleName(/peak 0 allowed and 0 rejected/)
+  })
+})
+
+describe('TrafficTrend hover', () => {
+  function hoverAt(container: HTMLElement, clientX: number) {
+    const plot = container.querySelector('.trend-plot')!
+    vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 590, 200))
+    fireEvent.pointerMove(plot, { clientX })
+    return plot
+  }
+
+  it('shows_values_of_the_hovered_second', () => {
+    const perSecond = minuteOfTraffic(1_000, (secondsAgo) =>
+      secondsAgo === 0 ? { allowed: 1_234, rejected: 56 } : { allowed: 10, rejected: 1 },
+    )
+    const { container } = render(<TrafficTrend perSecond={perSecond} />)
+
+    hoverAt(container, 590)
+
+    const tooltip = container.querySelector('.trend-tooltip')
+    expect(tooltip).toHaveTextContent('now')
+    expect(tooltip).toHaveTextContent('Allowed 1,234')
+    expect(tooltip).toHaveTextContent('Rejected 56')
+  })
+
+  it('labels_older_seconds_and_hides_on_leave', () => {
+    const { container } = render(<TrafficTrend perSecond={minuteOfTraffic(1_000, () => ({ allowed: 5, rejected: 1 }))} />)
+
+    const plot = hoverAt(container, 0)
+    expect(container.querySelector('.trend-tooltip')).toHaveTextContent('−59s')
+
+    fireEvent.pointerLeave(plot)
+    expect(container.querySelector('.trend-tooltip')).not.toBeInTheDocument()
   })
 })

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quota dashboard — dark mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --surface-1: #111418;
+    --surface-2: #171b21;
+    --surface-3: #1e232b;
+    --border: #242a33;
+    --border-strong: #343c48;
+    --text: #e8ecf1;
+    --text-muted: #a3adba;
+    --text-faint: #7d8794;
+    --primary: #4c8df6;
+    --primary-soft: rgb(76 141 246 / 0.14);
+    --good: #0ca30c;
+    --good-text: #3ccf5a;
+    --warning: #fab219;
+    --warning-text: #fab219;
+    --critical: #d03b3b;
+    --critical-text: #f0625f;
+    --series-allowed: #4c8df6;
+    --series-rejected: #e5484d;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+    --r-ctl: 6px;
+    --r-panel: 10px;
+    font: 14px/20px var(--sans);
+    color: var(--text);
+    background: var(--bg);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .faint { color: var(--text-faint); }
+  .muted { color: var(--text-muted); }
+  svg.icon { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* top bar */
+  .topbar { position: sticky; top: 0; z-index: 5; background: rgb(17 20 24 / 0.96); border-bottom: 1px solid var(--border); }
+  .topbar-inner { max-width: 1280px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
+  .brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--surface-3); border: 1px solid var(--border-strong); display: grid; place-items: center; color: var(--primary); }
+  .brand small { font-weight: 400; color: var(--text-faint); font-size: 13px; }
+  .topbar-status { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
+  .pill b { font-weight: 500; color: var(--text); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex: none; }
+  .dot.good { background: var(--good); } .dot.warning { background: var(--warning); } .dot.critical { background: var(--critical); }
+  .dot.live { box-shadow: 0 0 0 0 rgb(12 163 12 / 0.6); animation: pulse 2s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 6px rgb(12 163 12 / 0); } 100% { box-shadow: 0 0 0 0 rgb(12 163 12 / 0); } }
+  .reset { position: relative; overflow: hidden; }
+  .reset .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--primary); }
+  .divider { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 16px; }
+
+  /* banner */
+  .banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--r-ctl); background: var(--surface-1); border: 1px solid var(--border); border-left: 3px solid var(--warning); }
+  .banner .icon { color: var(--warning); }
+  .banner strong { font-weight: 500; }
+  .banner .quiet { margin-left: auto; }
+
+  /* kpis */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-panel); }
+  .kpi { padding: 16px 20px; }
+  .eyebrow { font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+  .kpi-value { margin-top: 10px; font: 500 28px/32px var(--mono); font-variant-numeric: tabular-nums; }
+  .kpi-value .unit { font: 400 13px var(--sans); color: var(--text-faint); margin-left: 4px; }
+  .kpi-sub { margin-top: 6px; font-size: 13px; color: var(--text-faint); }
+  .kpi-sub .up { color: var(--critical-text); }
+
+  /* row 2 */
+  .panel-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px 0; }
+  .panel-head h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }
+  .panel-head .aside { margin-left: auto; font-size: 13px; color: var(--text-faint); }
+  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--text-muted); }
+  .legend span::before { content: ''; display: inline-block; width: 12px; height: 2px; border-radius: 2px; margin-right: 6px; vertical-align: middle; background: var(--c); }
+  .chart-wrap { position: relative; padding: 8px 12px 12px 8px; }
+  #chart { display: block; width: 100%; height: 220px; }
+  #chart .grid line { stroke: var(--border); }
+  #chart .tick { fill: var(--text-faint); font: 12px var(--mono); }
+  #chart .end-label { font: 500 12px var(--mono); fill: var(--text); }
+  .tooltip { position: absolute; pointer-events: none; background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--r-ctl); padding: 8px 10px; font-size: 13px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.45); opacity: 0; transition: opacity .1s; min-width: 150px; }
+  .tooltip .t { color: var(--text-faint); margin-bottom: 4px; }
+  .tooltip .r { display: flex; align-items: center; gap: 8px; } .tooltip .r b { margin-left: auto; font-weight: 500; }
+  .tooltip i { width: 10px; height: 2px; background: var(--c); }
+
+
+  /* meters & chips */
+  .meter { height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+  .meter > div { height: 100%; border-radius: 999px; background: var(--c); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 13px; font-weight: 500; border: 1px solid; }
+  .chip.ok { color: var(--good-text); background: rgb(12 163 12 / 0.12); border-color: rgb(12 163 12 / 0.35); }
+  .chip.near { color: var(--warning-text); background: rgb(250 178 25 / 0.12); border-color: rgb(250 178 25 / 0.35); }
+  .chip.over { color: var(--critical-text); background: rgb(208 59 59 / 0.14); border-color: rgb(208 59 59 / 0.4); }
+  .chip .dot { width: 6px; height: 6px; background: currentColor; }
+
+  /* tenants */
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .toolbar h2 { margin: 0 12px 0 0; font-size: 16px; font-weight: 500; }
+  .search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; width: 260px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-ctl); color: var(--text-faint); }
+  .search input { all: unset; flex: 1; color: var(--text); font-size: 14px; }
+  .search input::placeholder { color: var(--text-faint); }
+  .search kbd { font: 12px var(--mono); color: var(--text-faint); border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 4px; }
+  select, .btn { font: inherit; height: 32px; padding: 0 10px; color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-ctl); cursor: pointer; }
+  .segmented { display: inline-flex; padding: 2px; gap: 2px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-ctl); }
+  .segmented button { font: inherit; font-size: 13px; height: 26px; padding: 0 10px; border: 0; border-radius: 4px; background: none; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .segmented button .num { color: var(--text-faint); font-size: 12px; }
+  .segmented button[aria-pressed='true'] { background: var(--primary-soft); color: var(--text); box-shadow: inset 0 0 0 1px rgb(76 141 246 / 0.45); }
+  .btn.quiet { background: none; border-color: transparent; color: var(--text-muted); }
+  .btn:hover, select:hover { background: var(--surface-3); }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .toolbar .spacer { flex: 1; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 10px 20px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  thead th { font-size: 13px; font-weight: 500; color: var(--text-muted); background: var(--surface-2); padding-top: 8px; padding-bottom: 8px; }
+  tbody tr:hover { background: var(--surface-3); }
+  tbody th { font-weight: 500; }
+  td.r, th.r { text-align: right; }
+  .usage { display: grid; grid-template-columns: 140px 1fr auto; align-items: center; gap: 12px; min-width: 320px; }
+  .usage .pct { width: 44px; text-align: right; }
+  .tier-select { background: transparent; border-color: transparent; padding: 0 6px; margin-left: -6px; }
+  .tier-select:hover { border-color: var(--border-strong); }
+  tfoot td { border: 0; padding: 12px 20px; }
+  .pager { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .pager .btn { width: 32px; padding: 0; display: grid; place-items: center; }
+  .pager .btn:disabled { opacity: .45; cursor: default; }
+
+  @media (max-width: 960px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .topbar-inner { flex-wrap: wrap; }
+    .topbar-status { margin-left: 0; flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+</svg>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-mark"><svg class="icon"><use href="#i-gauge"/></svg></span>Quota <small>gateway console</small></div>
+    <div class="topbar-status" aria-label="Status">
+      <span class="pill"><span class="dot good"></span>Gateway <b>Connected</b></span>
+      <span class="pill"><span class="dot warning"></span>Enforcement <b>Degraded</b></span>
+      <span class="pill reset"><svg class="icon" style="width:14px;height:14px"><use href="#i-clock"/></svg>Resets in <b class="num" id="countdown">4:12</b><span class="bar" id="reset-bar"></span></span>
+      <span class="divider"></span>
+      <span class="pill" style="border-color:transparent;background:none"><span class="dot good live"></span><span class="num" style="font-size:12px">updated 1s ago</span></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="banner" role="status">
+    <svg class="icon"><use href="#i-alert"/></svg>
+    <span><strong>Enforcement degraded.</strong> <span class="muted">The limiter store is slow; requests are being allowed without counting.</span></span>
+    <button class="btn quiet">Details</button>
+  </div>
+
+  <section class="kpis">
+    <div class="panel kpi"><div class="eyebrow"><span class="dot" style="background:var(--series-allowed)"></span>Allowed now</div><div class="kpi-value" id="k-allowed">412<span class="unit">req/s</span></div><div class="kpi-sub">period total <span class="num muted">1,284,907</span></div></div>
+    <div class="panel kpi"><div class="eyebrow"><span class="dot" style="background:var(--series-rejected)"></span>Rejected now</div><div class="kpi-value" id="k-rejected">37<span class="unit">req/s</span></div><div class="kpi-sub">period total <span class="num muted">18,422</span> · <span class="up num">1.4%</span></div></div>
+    <div class="panel kpi"><div class="eyebrow"><span class="dot warning"></span>Near limit</div><div class="kpi-value">3<span class="unit">tenants</span></div><div class="kpi-sub">≥ 80% of quota</div></div>
+    <div class="panel kpi"><div class="eyebrow"><span class="dot critical"></span>Over limit</div><div class="kpi-value">2<span class="unit">tenants</span></div><div class="kpi-sub">being rejected</div></div>
+  </section>
+
+  <section class="panel">
+      <div class="panel-head">
+        <h2>Traffic</h2>
+        <div class="legend"><span style="--c:var(--series-allowed)">Allowed</span><span style="--c:var(--series-rejected)">Rejected</span></div>
+        <span class="aside">last 60 s · req/s</span>
+      </div>
+      <div class="chart-wrap">
+        <svg id="chart" role="img" aria-label="Allowed and rejected requests per second, last 60 seconds"></svg>
+        <div class="tooltip" id="tip"></div>
+      </div>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar">
+      <h2>Tenants</h2>
+      <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="q" placeholder="Search name or ID" /><kbd>/</kbd></label>
+      <select id="tier" aria-label="Tier"><option value="">All tiers</option><option>Bronze</option><option>Silver</option><option>Gold</option></select>
+      <div class="segmented" role="group" aria-label="Status" id="seg"></div>
+      <span class="spacer"></span>
+      <button class="btn quiet" id="clear" hidden>Clear filters</button>
+    </div>
+    <table>
+      <thead><tr><th>Tenant</th><th class="r">ID</th><th>Tier</th><th>Usage</th><th class="r">Rejected</th><th>Status</th></tr></thead>
+      <tbody id="rows"></tbody>
+      <tfoot><tr><td colspan="6"><div class="pager"><span class="num faint" id="count"></span><button class="btn" disabled aria-label="Previous page"><svg class="icon"><use href="#i-left"/></svg></button><button class="btn" disabled aria-label="Next page"><svg class="icon"><use href="#i-right"/></svg></button></div></td></tr></tfoot>
+    </table>
+  </section>
+</main>
+
+<script>
+  // Sample data only — mirrors config/tenants.json; limits and usage are invented for the mockup.
+  const limits = { Bronze: 1000, Silver: 5000, Gold: 20000 }
+  const tenants = [
+    [1,'Acme Corp','Bronze',1000,212],[2,'Bluebird Analytics','Bronze',420,0],[3,'Cobalt Labs','Bronze',870,0],
+    [4,'Driftwood Travel','Bronze',130,0],[5,'Ember Foods','Bronze',1000,96],[6,'Fjord Logistics','Bronze',655,0],
+    [7,'Granite Insurance','Bronze',310,0],[8,'Harbor Health','Bronze',910,0],[9,'Ironwood Retail','Silver',2140,0],
+    [10,'Juniper Media','Silver',4180,0],[11,'Kestrel Payments','Silver',3020,0],[12,'Lumen Energy','Silver',880,0],
+    [13,'Meridian Bank','Silver',1555,0],[14,'Nimbus Cloud','Gold',12800,0],[15,'Orbit Telecom','Gold',6410,0],
+  ].map(([id, name, tier, used, rejected]) => {
+    const limit = limits[tier], pct = Math.round(used / limit * 100)
+    return { id, name, tier, used, limit, pct, rejected, status: pct >= 100 ? 'over' : pct >= 80 ? 'near' : 'ok' }
+  })
+  const fmt = new Intl.NumberFormat('en-US')
+  const colorOf = { ok: 'var(--good)', near: 'var(--warning)', over: 'var(--critical)' }
+  const labelOf = { ok: 'OK', near: 'Near', over: 'Over' }
+  const chip = (s) => `<span class="chip ${s}"><span class="dot"></span>${labelOf[s]}</span>`
+
+  // Tenants grid with working filters
+  const state = { q: '', tier: '', status: '' }
+  const seg = document.getElementById('seg')
+  function renderSeg() {
+    const counts = { '': tenants.length }
+    tenants.forEach(t => counts[t.status] = (counts[t.status] || 0) + 1)
+    seg.innerHTML = [['', 'All'], ['ok', 'OK'], ['near', 'Near'], ['over', 'Over']].map(([v, l]) =>
+      `<button aria-pressed="${state.status === v}" data-v="${v}">${l}<span class="num">${counts[v] || 0}</span></button>`).join('')
+  }
+  function renderRows() {
+    const q = state.q.trim().toLowerCase()
+    const rows = tenants.filter(t => (!q || t.name.toLowerCase().includes(q) || String(t.id) === q)
+      && (!state.tier || t.tier === state.tier) && (!state.status || t.status === state.status))
+    document.getElementById('rows').innerHTML = rows.length ? rows.map(t => `
+      <tr><th scope="row">${t.name}</th><td class="r num faint">${t.id}</td>
+        <td><select class="tier-select" aria-label="Tier for ${t.name}">${Object.entries(limits).map(([n, l]) =>
+          `<option ${n === t.tier ? 'selected' : ''}>${n} · ${fmt.format(l)}</option>`).join('')}</select></td>
+        <td><div class="usage"><span class="num">${fmt.format(t.used)} <span class="faint">/ ${fmt.format(t.limit)}</span></span>
+          <div class="meter"><div style="width:${Math.min(t.pct, 100)}%;--c:${colorOf[t.status]}"></div></div>
+          <span class="num pct">${t.pct}%</span></div></td>
+        <td class="r num ${t.rejected ? '' : 'faint'}">${t.rejected ? fmt.format(t.rejected) : '0'}</td>
+        <td>${chip(t.status)}</td></tr>`).join('')
+      : `<tr><td colspan="6" class="muted" style="padding:32px 20px;text-align:center">No tenants match these filters</td></tr>`
+    document.getElementById('count').textContent = `${rows.length ? 1 : 0}–${rows.length} of ${rows.length}`
+    document.getElementById('clear').hidden = !(state.q || state.tier || state.status)
+    renderSeg()
+  }
+  seg.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.status = b.dataset.v; renderRows() } })
+  document.getElementById('q').addEventListener('input', e => { state.q = e.target.value; renderRows() })
+  document.getElementById('tier').addEventListener('change', e => { state.tier = e.target.value; renderRows() })
+  document.getElementById('clear').addEventListener('click', () => {
+    Object.assign(state, { q: '', tier: '', status: '' }); document.getElementById('q').value = ''; document.getElementById('tier').value = ''; renderRows()
+  })
+  document.addEventListener('keydown', e => { if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); document.getElementById('q').focus() } })
+  renderRows()
+
+  // Live traffic chart (simulated)
+  const N = 60, series = []
+  let a = 400, r = 30
+  for (let i = 0; i < N; i++) series.push(next())
+  function next() {
+    a = Math.max(200, Math.min(620, a + (Math.random() - 0.5) * 60)); r = Math.max(0, Math.min(120, r + (Math.random() - 0.48) * 14))
+    return { allowed: Math.round(a), rejected: Math.round(r) }
+  }
+  const svg = document.getElementById('chart'), tip = document.getElementById('tip')
+  let hover = null
+  function draw() {
+    const W = svg.clientWidth, H = svg.clientHeight, L = 40, R = 44, T = 10, B = 22
+    const max = 800, x = i => L + i * (W - L - R) / (N - 1), y = v => T + (1 - v / max) * (H - T - B)
+    const path = k => series.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p[k]).toFixed(1)}`).join('')
+    const last = series[N - 1]
+    let s = `<g class="grid">${[0, 400, 800].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}</g>`
+    s += [['-60s', 0], ['-30s', 30], ['now', 59]].map(([t, i]) => `<text class="tick" x="${x(i)}" y="${H - 4}" text-anchor="${i ? i === 59 ? 'end' : 'middle' : 'start'}">${t}</text>`).join('')
+    s += `<path d="${path('allowed')}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z" fill="var(--primary-soft)"/>`
+    s += `<path d="${path('allowed')}" fill="none" stroke="var(--series-allowed)" stroke-width="2" stroke-linejoin="round"/>`
+    s += `<path d="${path('rejected')}" fill="none" stroke="var(--series-rejected)" stroke-width="2" stroke-linejoin="round"/>`
+    s += `<text class="end-label" x="${W - R + 6}" y="${y(last.allowed) + 4}">${last.allowed}</text><text class="end-label" x="${W - R + 6}" y="${y(last.rejected) + 4}">${last.rejected}</text>`
+    if (hover !== null) {
+      const p = series[hover], hx = x(hover)
+      s += `<line x1="${hx}" x2="${hx}" y1="${T}" y2="${H - B}" stroke="var(--border-strong)"/>`
+      s += `<circle cx="${hx}" cy="${y(p.allowed)}" r="4" fill="var(--series-allowed)" stroke="var(--surface-1)" stroke-width="2"/><circle cx="${hx}" cy="${y(p.rejected)}" r="4" fill="var(--series-rejected)" stroke="var(--surface-1)" stroke-width="2"/>`
+      tip.innerHTML = `<div class="t num">${hover === N - 1 ? 'now' : `${hover - N + 1}s`}</div>
+        <div class="r"><i style="--c:var(--series-allowed)"></i>Allowed<b class="num">${p.allowed}</b></div>
+        <div class="r"><i style="--c:var(--series-rejected)"></i>Rejected<b class="num">${p.rejected}</b></div>`
+      tip.style.left = `${Math.min(hx + 20, W - 170)}px`; tip.style.top = '16px'; tip.style.opacity = 1
+    } else tip.style.opacity = 0
+    svg.innerHTML = s
+    svg._geom = { L, R, W }
+    document.getElementById('k-allowed').innerHTML = `${last.allowed}<span class="unit">req/s</span>`
+    document.getElementById('k-rejected').innerHTML = `${last.rejected}<span class="unit">req/s</span>`
+  }
+  svg.addEventListener('mousemove', e => {
+    const { L, R, W } = svg._geom, px = e.offsetX
+    hover = Math.max(0, Math.min(N - 1, Math.round((px - L) / (W - L - R) * (N - 1)))); draw()
+  })
+  svg.addEventListener('mouseleave', () => { hover = null; draw() })
+  addEventListener('resize', draw)
+  draw()
+  let left = 252
+  setInterval(() => {
+    series.shift(); series.push(next()); draw()
+    left = left > 0 ? left - 1 : 300
+    document.getElementById('countdown').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
+    document.getElementById('reset-bar').style.width = `${(1 - left / 300) * 100}%`
+  }, 1000)
+</script>
+</body>
+</html>

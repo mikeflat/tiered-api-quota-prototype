@@ -18,7 +18,7 @@ const statusOptions: readonly { readonly value: TenantStatus; readonly label: st
 export function TenantFilters({ controls, actions }: TenantFiltersProps) {
   return (
     <form className="tenant-filters" aria-label="Tenant filters" onSubmit={(event) => event.preventDefault()}>
-      <label className="filter">
+      <label className="filter filter-name">
         <span>Name</span>
         <input
           type="search"

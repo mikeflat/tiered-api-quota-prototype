@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SecondTraffic } from '../../src/domain/snapshot.ts'
-import { trendLinesOf, trendSlots } from '../../src/domain/trendGeometry.ts'
+import { trendHoverAt, trendLinesOf, trendSlots } from '../../src/domain/trendGeometry.ts'
 
 const size = { width: 590, height: 100 }
 
@@ -60,5 +60,32 @@ describe('trendLinesOf', () => {
 
     expect(lines.allowed[1]!.x).toBe(10.2)
     expect(lines.allowed[1]!.y).toBe(80)
+  })
+})
+
+describe('trendHoverAt', () => {
+  it('full_minute_maps_edges_to_oldest_and_newest_second', () => {
+    expect(trendHoverAt(0, trendSlots)).toEqual({ offset: 0, position: 0, secondsAgo: 59 })
+    expect(trendHoverAt(1, trendSlots)).toEqual({ offset: 59, position: 1, secondsAgo: 0 })
+  })
+
+  it('snaps_to_nearest_slot', () => {
+    expect(trendHoverAt(0.5, trendSlots)?.offset).toBe(30)
+  })
+
+  it('clamps_pointer_outside_the_chart', () => {
+    expect(trendHoverAt(-0.2, trendSlots)?.offset).toBe(0)
+    expect(trendHoverAt(1.3, trendSlots)?.secondsAgo).toBe(0)
+  })
+
+  it('partial_minute_has_no_hover_over_empty_slots', () => {
+    expect(trendHoverAt(0, 10)).toBeNull()
+    expect(trendHoverAt(1, 10)).toEqual({ offset: 9, position: 1, secondsAgo: 0 })
+    expect(trendHoverAt(50 / 59, 10)).toEqual({ offset: 0, position: 50 / 59, secondsAgo: 9 })
+  })
+
+  it('no_seconds_means_no_hover', () => {
+    expect(trendHoverAt(0.5, 0)).toBeNull()
+    expect(trendHoverAt(Number.NaN, trendSlots)).toBeNull()
   })
 })

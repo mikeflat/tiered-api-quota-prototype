@@ -217,3 +217,25 @@ describe('TenantGrid', () => {
     expect(screen.getByTestId('tenant-grid-body')).not.toHaveClass('is-updating')
   })
 })
+
+describe('TenantGrid usage meter', () => {
+  it('fills_to_usage_in_status_tone_and_caps_at_full', () => {
+    const { container } = render(<TenantGrid grid={gridOf(gridRow(), blueBank)} onTierChange={() => {}} {...noPaging} />)
+
+    const fills = [...container.querySelectorAll<HTMLElement>('.meter-fill')]
+    expect(fills.map((fill) => fill.style.width)).toEqual(['85%', '100%'])
+    expect(fills[0]).toHaveClass('meter-warning')
+    expect(fills[1]).toHaveClass('meter-error')
+  })
+
+  it('has_no_meter_without_usage', () => {
+    const { container } = render(
+      <TenantGrid
+        grid={gridOf(gridRow({ used: null, rejected: null, status: null, usagePercent: null }))}
+        onTierChange={() => {}} {...noPaging}
+      />,
+    )
+
+    expect(container.querySelector('.meter')).not.toBeInTheDocument()
+  })
+})

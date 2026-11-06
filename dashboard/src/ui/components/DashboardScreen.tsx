@@ -19,12 +19,22 @@ export function DashboardScreen({ view, tenants }: DashboardScreenProps) {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Quota dashboard</h1>
-        <HeaderStatus
-          connection={view.connectionStatus}
-          enforcement={view.enforcement}
-          secondsUntilReset={view.secondsUntilReset}
-        />
+        <div className="app-header-inner">
+          <h1>
+            <span className="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="m12 14 4-4" />
+                <path d="M3.3 19a10 10 0 1 1 17.4 0" />
+              </svg>
+            </span>
+            Quota dashboard
+          </h1>
+          <HeaderStatus
+            connection={view.connectionStatus}
+            enforcement={view.enforcement}
+            secondsUntilReset={view.secondsUntilReset}
+          />
+        </div>
       </header>
       <div className="banners">
         {view.gatewayUnreachable && <GatewayUnreachableBanner />}
