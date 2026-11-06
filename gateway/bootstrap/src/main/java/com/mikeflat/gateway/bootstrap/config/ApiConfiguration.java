@@ -1,8 +1,13 @@
 package com.mikeflat.gateway.bootstrap.config;
 
 import com.mikeflat.gateway.adapters.api.filter.QuotaFilter;
+import com.mikeflat.gateway.adapters.api.web.AdminController;
+import com.mikeflat.gateway.adapters.api.web.ConstraintViolationProblemAdvice;
 import com.mikeflat.gateway.adapters.api.web.StubController;
+import com.mikeflat.gateway.app.admin.ChangeTenantTier;
+import com.mikeflat.gateway.app.admin.ListTiers;
 import com.mikeflat.gateway.app.quota.AdmitBusinessCall;
+import com.mikeflat.gateway.app.snapshot.BuildAdminSnapshot;
 import jakarta.servlet.DispatcherType;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -25,6 +30,17 @@ public class ApiConfiguration {
     @Bean
     StubController stubController() {
         return new StubController();
+    }
+
+    @Bean
+    AdminController adminController(
+            ListTiers listTiers, ChangeTenantTier changeTenantTier, BuildAdminSnapshot buildAdminSnapshot) {
+        return new AdminController(listTiers, changeTenantTier, buildAdminSnapshot);
+    }
+
+    @Bean
+    ConstraintViolationProblemAdvice constraintViolationProblemAdvice() {
+        return new ConstraintViolationProblemAdvice();
     }
 
     @Bean

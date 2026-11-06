@@ -1,10 +1,17 @@
 package com.mikeflat.gateway.adapters.infra.redis;
 
+import static com.mikeflat.gateway.adapters.infra.redis.RedisKeys.nearKey;
+import static com.mikeflat.gateway.adapters.infra.redis.RedisKeys.outcomeName;
+import static com.mikeflat.gateway.adapters.infra.redis.RedisKeys.overKey;
+import static com.mikeflat.gateway.adapters.infra.redis.RedisKeys.periodTotalKey;
+import static com.mikeflat.gateway.adapters.infra.redis.RedisKeys.rejectedKey;
+import static com.mikeflat.gateway.adapters.infra.redis.RedisKeys.secondKey;
+import static com.mikeflat.gateway.adapters.infra.redis.RedisKeys.usedKey;
+
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecordingFailedException;
 import com.mikeflat.gateway.domain.quota.UsageEvent;
 import com.mikeflat.gateway.domain.quota.UsageLimits;
-import com.mikeflat.gateway.domain.quota.UsageOutcome;
 import java.util.List;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -28,30 +35,6 @@ public final class RedisUsageCounter implements UsageCounter {
         this.periodTtlSeconds = Long.toString(periodTtlSeconds);
     }
 
-    public static String usedKey(long tenantId, long periodIndex) {
-        return "quota:used:" + tenantId + ":" + periodIndex;
-    }
-
-    public static String rejectedKey(long tenantId, long periodIndex) {
-        return "quota:rejected:" + tenantId + ":" + periodIndex;
-    }
-
-    public static String secondKey(UsageOutcome outcome, long epochSecond) {
-        return "traffic:" + scriptOutcome(outcome) + ":" + epochSecond;
-    }
-
-    public static String periodTotalKey(UsageOutcome outcome, long periodIndex) {
-        return "traffic:total:" + scriptOutcome(outcome) + ":" + periodIndex;
-    }
-
-    public static String nearKey(long periodIndex) {
-        return "quota:near:" + periodIndex;
-    }
-
-    public static String overKey(long periodIndex) {
-        return "quota:over:" + periodIndex;
-    }
-
     @Override
     public long record(UsageEvent event, UsageLimits limits) {
         List<String> keys = List.of(
@@ -65,7 +48,7 @@ public final class RedisUsageCounter implements UsageCounter {
             return template.execute(
                     recordUsageScript,
                     keys,
-                    scriptOutcome(event.outcome()),
+                    outcomeName(event.outcome()),
                     periodTtlSeconds,
                     Long.toString(SECOND_KEY_TTL_SECONDS),
                     Long.toString(limits.limit()),
@@ -76,12 +59,5 @@ public final class RedisUsageCounter implements UsageCounter {
                     "recording usage of tenant " + event.tenantId() + " in period " + event.periodIndex() + " failed",
                     redisFailure);
         }
-    }
-
-    private static String scriptOutcome(UsageOutcome outcome) {
-        return switch (outcome) {
-            case ALLOWED -> "allowed";
-            case REJECTED -> "rejected";
-        };
     }
 }

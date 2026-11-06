@@ -448,14 +448,14 @@ class RedisUsageCounterTest {
 
     @Test
     void key_builders_match_documented_names() {
-        assertThat(RedisUsageCounter.secondKey(UsageOutcome.ALLOWED, SECOND)).isEqualTo("traffic:allowed:" + SECOND);
-        assertThat(RedisUsageCounter.secondKey(UsageOutcome.REJECTED, SECOND)).isEqualTo("traffic:rejected:" + SECOND);
-        assertThat(RedisUsageCounter.periodTotalKey(UsageOutcome.ALLOWED, PERIOD))
+        assertThat(RedisKeys.secondKey(UsageOutcome.ALLOWED, SECOND)).isEqualTo("traffic:allowed:" + SECOND);
+        assertThat(RedisKeys.secondKey(UsageOutcome.REJECTED, SECOND)).isEqualTo("traffic:rejected:" + SECOND);
+        assertThat(RedisKeys.periodTotalKey(UsageOutcome.ALLOWED, PERIOD))
                 .isEqualTo("traffic:total:allowed:" + PERIOD);
-        assertThat(RedisUsageCounter.periodTotalKey(UsageOutcome.REJECTED, PERIOD))
+        assertThat(RedisKeys.periodTotalKey(UsageOutcome.REJECTED, PERIOD))
                 .isEqualTo("traffic:total:rejected:" + PERIOD);
-        assertThat(RedisUsageCounter.nearKey(PERIOD)).isEqualTo("quota:near:" + PERIOD);
-        assertThat(RedisUsageCounter.overKey(PERIOD)).isEqualTo("quota:over:" + PERIOD);
+        assertThat(RedisKeys.nearKey(PERIOD)).isEqualTo("quota:near:" + PERIOD);
+        assertThat(RedisKeys.overKey(PERIOD)).isEqualTo("quota:over:" + PERIOD);
     }
 
     private static UsageEvent allowed(long tenantId, long periodIndex) {

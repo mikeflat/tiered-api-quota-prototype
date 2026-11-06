@@ -30,4 +30,13 @@ final class HttpProbe {
         headers.forEach(request::header);
         return CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
+
+    static HttpResponse<String> putJson(int port, String path, String body) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        return CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+    }
 }

@@ -1,14 +1,138 @@
 # Contract of the gateway's HTTP API. Interfaces and DTOs are generated from this file into
 # com.mikeflat.gateway.adapters.api.generated.{api,model}. ProblemDetail is mapped to Spring's
-# own class and not generated. The admin API adds its paths in a later change.
+# own class and not generated. Admin paths sit outside /api/, so the tenant guard and quota do not
+# apply to them. tier and status query values are plain strings parsed case-insensitively by the
+# controller; nullable fields are written as JSON null when Redis can't be read.
 openapi: 3.0.3
 info:
   title: Quota gateway API
-  version: 0.1.0
+  version: 0.2.0
 tags:
   - name: Resource
     description: Stubbed business resource behind the tenant guard
+  - name: Admin
+    description: Tier administration and the admin dashboard snapshot
 paths:
+  /admin/tiers:
+    get:
+      tags:
+        - Admin
+      operationId: listTiers
+      summary: List the tiers with their configured limit per period
+      responses:
+        '200':
+          description: Bronze, Silver and Gold, in that order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TierLimit'
+  /admin/tenants/{id}/tier:
+    put:
+      tags:
+        - Admin
+      operationId: changeTenantTier
+      summary: Change a tenant's tier in the gateway's memory and unblock it
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Id of a tenant in the gateway's registry
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TierChangeRequest'
+      responses:
+        '200':
+          description: The tenant after the change, with the limit of its new tier
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantTier'
+        '400':
+          description: The id is not a positive integer, the body is missing or malformed, or the tier is unknown
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '404':
+          description: No tenant has this id
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /admin/snapshot:
+    get:
+      tags:
+        - Admin
+      operationId: getSnapshot
+      summary: Current period, cached global traffic metrics and one page of tenants with usage
+      parameters:
+        - name: name
+          in: query
+          required: false
+          description: Keep tenants whose name contains this text, ignoring case; empty means no filter
+          schema:
+            type: string
+        - name: id
+          in: query
+          required: false
+          description: Keep only the tenant with this id
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: tier
+          in: query
+          required: false
+          description: Keep tenants of this tier (Bronze, Silver or Gold, any letter case); empty means no filter
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Keep tenants by the current period's near and over sets (ok, near or over); empty means no filter
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          description: Page number, from 0
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          required: false
+          description: Rows per page
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: The snapshot; metric parts are null when Redis can't be read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSnapshot'
+        '400':
+          description: A tier, status, id, page or size value is invalid
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /api/v1/resource:
     get:
       tags:
@@ -64,6 +188,200 @@ components:
         message:
           type: string
           example: Served by the quota gateway stub
+    TierLimit:
+      type: object
+      required:
+        - name
+        - limit
+      properties:
+        name:
+          type: string
+          example: Bronze
+        limit:
+          type: integer
+          format: int64
+          example: 100
+    TierChangeRequest:
+      type: object
+      required:
+        - tier
+      properties:
+        tier:
+          type: string
+          description: Bronze, Silver or Gold, any letter case
+          example: Gold
+    TenantTier:
+      type: object
+      required:
+        - id
+        - name
+        - tier
+        - limit
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: Acme Corp
+        tier:
+          type: string
+          example: Gold
+        limit:
+          type: integer
+          format: int64
+          example: 10000
+    AdminSnapshot:
+      type: object
+      required:
+        - period
+        - metrics
+        - tenants
+      properties:
+        period:
+          $ref: '#/components/schemas/QuotaPeriod'
+        metrics:
+          description: Null when Redis could not be read within the last 3 seconds
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/TrafficMetrics'
+        tenants:
+          $ref: '#/components/schemas/TenantPage'
+    QuotaPeriod:
+      type: object
+      required:
+        - index
+        - endsAt
+        - secondsLeft
+      properties:
+        index:
+          type: integer
+          format: int64
+          example: 100000
+        endsAt:
+          type: string
+          format: date-time
+          example: '1970-03-11T10:41:00Z'
+        secondsLeft:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 15
+    TrafficMetrics:
+      type: object
+      required:
+        - perSecond
+        - totals
+        - tenantsNear
+        - tenantsOver
+      properties:
+        perSecond:
+          type: array
+          description: The 60 complete seconds before the metrics were read, oldest first
+          items:
+            $ref: '#/components/schemas/SecondTraffic'
+        totals:
+          $ref: '#/components/schemas/PeriodTotals'
+        tenantsNear:
+          type: integer
+          format: int64
+        tenantsOver:
+          type: integer
+          format: int64
+    SecondTraffic:
+      type: object
+      required:
+        - second
+        - allowed
+        - rejected
+      properties:
+        second:
+          type: integer
+          format: int64
+          description: Epoch second
+        allowed:
+          type: integer
+          format: int64
+        rejected:
+          type: integer
+          format: int64
+    PeriodTotals:
+      type: object
+      required:
+        - allowed
+        - rejected
+      properties:
+        allowed:
+          type: integer
+          format: int64
+        rejected:
+          type: integer
+          format: int64
+    TenantPage:
+      type: object
+      required:
+        - rowsAvailable
+        - rows
+        - total
+        - page
+        - size
+      properties:
+        rowsAvailable:
+          type: boolean
+          description: False when a status filter could not be answered because Redis can't be read
+        rows:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/TenantRow'
+        total:
+          type: integer
+          format: int32
+          nullable: true
+          description: Number of tenants matching all filters
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+    TenantRow:
+      type: object
+      required:
+        - id
+        - name
+        - tier
+        - limit
+        - used
+        - rejected
+        - status
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        tier:
+          type: string
+        limit:
+          type: integer
+          format: int64
+        used:
+          type: integer
+          format: int64
+          nullable: true
+          description: Null when Redis can't be read
+        rejected:
+          type: integer
+          format: int64
+          nullable: true
+          description: Null when Redis can't be read
+        status:
+          type: string
+          nullable: true
+          description: ok, near or over against the current limit; null when Redis can't be read
+          example: near
     ProblemDetail:
       type: object
       properties:

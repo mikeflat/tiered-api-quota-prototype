@@ -1,7 +1,12 @@
 package com.mikeflat.gateway.bootstrap.config;
 
 import com.mikeflat.gateway.adapters.infra.logging.Slf4jUsageRecordingAlerts;
+import com.mikeflat.gateway.adapters.infra.redis.RedisTenantUsageReader;
+import com.mikeflat.gateway.adapters.infra.redis.RedisTrafficMetricsReader;
 import com.mikeflat.gateway.adapters.infra.redis.RedisUsageCounter;
+import com.mikeflat.gateway.app.metrics.RefreshTrafficMetrics;
+import com.mikeflat.gateway.app.metrics.TrafficMetricsReader;
+import com.mikeflat.gateway.app.snapshot.TenantUsageReader;
 import com.mikeflat.gateway.app.usage.UsageCounter;
 import com.mikeflat.gateway.app.usage.UsageRecordingAlerts;
 import com.mikeflat.gateway.domain.quota.QuotaSettings;
@@ -44,5 +49,20 @@ public class InfraConfiguration {
     @Bean(destroyMethod = "shutdownNow")
     ThreadPoolExecutor usageWriterExecutor(UsageRecordingProperties properties) {
         return UsageWriterExecutor.create(properties.queueCapacity());
+    }
+
+    @Bean
+    TrafficMetricsReader trafficMetricsReader(StringRedisTemplate redisTemplate) {
+        return new RedisTrafficMetricsReader(redisTemplate);
+    }
+
+    @Bean
+    TenantUsageReader tenantUsageReader(StringRedisTemplate redisTemplate) {
+        return new RedisTenantUsageReader(redisTemplate);
+    }
+
+    @Bean(destroyMethod = "close")
+    MetricsRefreshScheduler metricsRefreshScheduler(RefreshTrafficMetrics refreshTrafficMetrics) {
+        return MetricsRefreshScheduler.start(refreshTrafficMetrics::refresh, MetricsRefreshScheduler.EVERY_SECOND);
     }
 }

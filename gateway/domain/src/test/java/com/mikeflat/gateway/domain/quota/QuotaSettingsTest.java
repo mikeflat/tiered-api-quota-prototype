@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mikeflat.gateway.domain.tenant.Tier;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
@@ -192,6 +193,20 @@ class QuotaSettingsTest {
     @Test
     void seconds_until_next_period_on_boundary_is_whole_period() {
         assertThat(defaults.secondsUntilNextPeriod(1_800_000_060L)).isEqualTo(60);
+    }
+
+    @Test
+    void period_at_middle_of_period_reports_index_end_and_seconds_left() {
+        QuotaPeriod period = defaults.periodAt(Instant.ofEpochSecond(6_000_045L, 500_000_000));
+
+        assertThat(period).isEqualTo(new QuotaPeriod(100_000L, Instant.ofEpochSecond(6_000_060L), 15));
+    }
+
+    @Test
+    void period_at_boundary_starts_new_period() {
+        QuotaPeriod period = defaults.periodAt(Instant.ofEpochSecond(6_000_060L));
+
+        assertThat(period).isEqualTo(new QuotaPeriod(100_001L, Instant.ofEpochSecond(6_000_120L), 60));
     }
 
     @Test

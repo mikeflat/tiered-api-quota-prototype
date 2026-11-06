@@ -75,4 +75,53 @@ class BlockedTenantsTest {
         assertThat(blockedTenants.isBlocked(1, PERIOD)).isTrue();
         writer.join();
     }
+
+    @Test
+    void unblock_removes_only_that_tenant() {
+        blockedTenants.block(1, PERIOD);
+        blockedTenants.block(2, PERIOD);
+
+        blockedTenants.unblock(1);
+
+        assertThat(blockedTenants.isBlocked(1, PERIOD)).isFalse();
+        assertThat(blockedTenants.isBlocked(2, PERIOD)).isTrue();
+    }
+
+    @Test
+    void unblock_of_unblocked_tenant_is_harmless() {
+        blockedTenants.block(2, PERIOD);
+
+        blockedTenants.unblock(1);
+        new BlockedTenants().unblock(1);
+
+        assertThat(blockedTenants.isBlocked(1, PERIOD)).isFalse();
+        assertThat(blockedTenants.isBlocked(2, PERIOD)).isTrue();
+    }
+
+    @Test
+    void block_if_false_condition_does_not_block() {
+        blockedTenants.blockIf(1, PERIOD, () -> false);
+
+        assertThat(blockedTenants.isBlocked(1, PERIOD)).isFalse();
+    }
+
+    @Test
+    void block_if_true_condition_blocks() {
+        blockedTenants.blockIf(1, PERIOD, () -> true);
+
+        assertThat(blockedTenants.isBlocked(1, PERIOD)).isTrue();
+    }
+
+    @Test
+    void existing_period_rules_still_hold() {
+        blockedTenants.blockIf(1, PERIOD, () -> true);
+        blockedTenants.blockIf(2, PERIOD + 1, () -> true);
+        blockedTenants.blockIf(3, PERIOD, () -> true);
+
+        assertThat(blockedTenants.isBlocked(1, PERIOD)).isFalse();
+        assertThat(blockedTenants.isBlocked(1, PERIOD + 1)).isFalse();
+        assertThat(blockedTenants.isBlocked(2, PERIOD + 1)).isTrue();
+        assertThat(blockedTenants.isBlocked(3, PERIOD)).isFalse();
+        assertThat(blockedTenants.isBlocked(3, PERIOD + 1)).isFalse();
+    }
 }

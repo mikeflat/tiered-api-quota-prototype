@@ -48,6 +48,7 @@ class RedisStoppedMidRunTest {
     private static final Duration HEALTH_DEADLINE = Duration.ofSeconds(2);
     private static final Duration PROBE_DEADLINE = Duration.ofSeconds(1);
     private static final Duration RECORDING_DEADLINE = Duration.ofSeconds(30);
+    private static final Duration METRICS_DEADLINE = Duration.ofSeconds(3);
     private static final String OUTAGE_WARNING = "Redis unavailable, usage recording failing:"
             + " no new tenants are blocked and counting is paused";
     private static final String RESUME_LINE = "Redis available again, usage recording resumed";
@@ -170,6 +171,21 @@ class RedisStoppedMidRunTest {
         assertThat(blockedTenants.isBlocked(1, nextPeriod)).isFalse();
         assertThat(blockedTenants.isBlocked(2, nextPeriod)).isFalse();
         assertThat(timedGetAs("1", REDIS_TIMEOUT).statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void snapshot_metrics_become_null_during_outage_and_return_after_it() throws Exception {
+        Eventually.within(METRICS_DEADLINE, () -> assertThat(snapshotMetrics().isNull()).isTrue());
+
+        unpauseRedis();
+
+        Eventually.within(METRICS_DEADLINE, () -> assertThat(snapshotMetrics().isObject()).isTrue());
+    }
+
+    private JsonNode snapshotMetrics() throws Exception {
+        HttpResponse<String> snapshot = HttpProbe.get(port, "/admin/snapshot?size=1");
+        assertThat(snapshot.statusCode()).isEqualTo(200);
+        return JSON.readTree(snapshot.body()).path("metrics");
     }
 
     private void assertHealthDownWithProbesUp() throws Exception {

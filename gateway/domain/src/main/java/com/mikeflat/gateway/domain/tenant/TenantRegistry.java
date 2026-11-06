@@ -38,6 +38,17 @@ public final class TenantRegistry {
         return tenantsById.values().stream().sorted(BY_NAME).toList();
     }
 
+    public List<Tenant> search(TenantFilter filter) {
+        return tenantsById.values().stream().filter(filter::matches).sorted(BY_NAME).toList();
+    }
+
+    public Optional<Tenant> changeTier(long id, Tier tier) {
+        if (tier == null) {
+            throw new IllegalArgumentException("tier must not be null");
+        }
+        return Optional.ofNullable(tenantsById.computeIfPresent(id, (key, tenant) -> tenant.withTier(tier)));
+    }
+
     public Map<Tier, Integer> countByTier() {
         EnumMap<Tier, Integer> counts = new EnumMap<>(Tier.class);
         for (Tier tier : Tier.values()) {

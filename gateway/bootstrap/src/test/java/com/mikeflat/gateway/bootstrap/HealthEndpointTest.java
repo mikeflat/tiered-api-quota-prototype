@@ -84,7 +84,7 @@ class HealthEndpointTest {
 
     @Test
     void path_that_does_not_exist_yet_is_not_found() throws Exception {
-        assertThat(HttpProbe.get(port, "/admin/snapshot").statusCode()).isEqualTo(404);
+        assertThat(HttpProbe.get(port, "/admin/tenants").statusCode()).isEqualTo(404);
     }
 
     private static boolean isJson(HttpResponse<String> response) {

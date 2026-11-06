@@ -2,6 +2,7 @@ package com.mikeflat.gateway.domain.quota;
 
 import com.mikeflat.gateway.domain.tenant.Tier;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
@@ -52,6 +53,13 @@ public record QuotaSettings(Duration period, Map<Tier, Long> limits, int nearThr
     public long secondsUntilNextPeriod(long epochSecond) {
         long nextPeriodStart = Math.multiplyExact(periodIndexAt(epochSecond) + 1, periodSeconds());
         return nextPeriodStart - epochSecond;
+    }
+
+    public QuotaPeriod periodAt(Instant now) {
+        long epochSecond = now.getEpochSecond();
+        long index = periodIndexAt(epochSecond);
+        Instant endsAt = Instant.ofEpochSecond(Math.multiplyExact(index + 1, periodSeconds()));
+        return new QuotaPeriod(index, endsAt, secondsUntilNextPeriod(epochSecond));
     }
 
     public long limitOf(Tier tier) {

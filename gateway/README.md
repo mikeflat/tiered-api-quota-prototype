@@ -5,17 +5,18 @@ fixed-window request quota by tier (Bronze/Silver/Gold) and host the admin API u
 dashboard. Requirements, architecture and backlog are in [`../docs`](../docs).
 
 **Current state: stub business endpoint behind the tenant guard, usage counted in Redis, quota
-enforced.** At
+enforced, admin API.** At
 startup the gateway loads the tenants from the shared `../config/tenants.json` into an in-memory
 registry and reads the quota settings (period, limit per tier, near threshold); it refuses to
-start if either is invalid. It answers `GET /actuator/health` and the stub business endpoint
+start if either is invalid. It answers `GET /actuator/health`, the stub business endpoint
 `GET /api/v1/resource` (see [Business API](#business-api)), which requires a known tenant in
-`X-Tenant-Id`. Every other path returns `404` (under `/api/` only after the tenant guard has
-passed). Every admitted business request is counted per tenant and period in Redis,
-asynchronously and off the request path (see [Usage recording](#usage-recording)). Once a
-tenant's recorded usage reaches its tier's limit, its requests get `429 Too Many Requests` with
-`Retry-After` until the period ends (see [Quota enforcement](#quota-enforcement)). The admin API
-is added by a later backlog item.
+`X-Tenant-Id`, and the admin endpoints `GET /admin/tiers`, `PUT /admin/tenants/{id}/tier` and
+`GET /admin/snapshot` (see [Admin API](#admin-api)). Every other path returns `404` (under
+`/api/` only after the tenant guard has passed). Every admitted business request is counted per
+tenant and period in Redis, asynchronously and off the request path (see
+[Usage recording](#usage-recording)). Once a tenant's recorded usage reaches its tier's limit,
+its requests get `429 Too Many Requests` with `Retry-After` until the period ends or its tier is
+changed (see [Quota enforcement](#quota-enforcement)).
 
 ## Requirements
 
@@ -44,12 +45,12 @@ The modules map to the project's Clean Architecture layers like this:
 
 | Module (Gradle path) | Package | Clean Architecture layer | Content (now / later) |
 |---|---|---|---|
-| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry`, `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings` with `periodIndexAt`, `secondsUntilNextPeriod`, `nearBoundary` and `limitsOf`, `UsageLimits` (a tier's limit and near-limit boundary, with `reachedBy(used)`), `BlockedTenants` (the per-period blocked set), `AdmissionPolicy` with its `Admission` outcomes `Admitted`, `Blocked` (with `retryAfterSeconds`) and `TenantUnknown`, `UsageEvent` (`allowedAt`, `rejectedAt`), `UsageOutcome`); later: unblocking on a tier change |
-| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed event for each admitted call and a rejected event for each blocked call), `quota.BlockTenantsOverLimit` (run by the writer after each recorded event; blocks a tenant when `limits.reachedBy(used)`), `usage.TenantUsageLimits` (`of(tenantId)`: the `UsageLimits` of the tenant's tier at that moment, from `TenantRegistry` and `QuotaSettings`), `usage.UsageRecorder` (hands events to the writer executor; on the writer resolves the tenant's limits, skips an event of an unknown tenant, applies it through the port and passes the returned `used` with the same limits to its `RecordedUsageListener`; reports outage start and end through `RecordingOutage`), `usage.RecordedUsageListener` (`usageRecorded(event, used, limits)`), `usage.UsageCounter` port (`record(event, limits)` → `used`) with `UsageRecordingFailedException`, `usage.UsageRecordingAlerts` port; later: tier change use case, metrics reader ports |
-| `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | now: `filter.QuotaFilter` (tenant guard and `429` for blocked tenants) with its `TenantIdHeader` parser, `web.StubController`; later: `AdminController` |
-| `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | now: `redis.RedisUsageCounter` (implements `UsageCounter`; key builders for every key the script writes) and the `redis/record-usage.lua` script resource (tenant counters, global traffic counts, near/over sets), `logging.Slf4jUsageRecordingAlerts` (implements `UsageRecordingAlerts`); later: `MetricsSnapshotJob` reader |
+| `:domain` | `com.mikeflat.gateway.domain` | domain (pure Java) | now: `tenant` (`Tier`, `Tenant`, `TenantRegistry` with `search(TenantFilter)` and `changeTier`, `TenantFilter` (name contains, id, tier), `TenantRepository` port, `TenantLoadException`), `quota` (`QuotaSettings` with `periodIndexAt`, `periodAt`, `secondsUntilNextPeriod`, `nearBoundary` and `limitsOf`, `QuotaPeriod` (index, end, seconds left), `UsageLimits` (a tier's limit and near-limit boundary, with `reachedBy(used)`), `TenantStatus` (`ok`/`near`/`over` of a `used` against `UsageLimits`), `BlockedTenants` (the per-period blocked set, with `blockIf` and `unblock`), `AdmissionPolicy` with its `Admission` outcomes `Admitted`, `Blocked` (with `retryAfterSeconds`) and `TenantUnknown`, `UsageEvent` (`allowedAt`, `rejectedAt`), `UsageOutcome`, `TrafficMetrics` with `SecondTraffic` and `PeriodTotals`) |
+| `:app` | `com.mikeflat.gateway.app` | application: use cases + ports | now: `tenant.LoadTenantRegistry`, `quota.AdmitBusinessCall` (submits an allowed event for each admitted call and a rejected event for each blocked call), `quota.BlockTenantsOverLimit` (run by the writer after each recorded event; blocks a tenant when `limits.reachedBy(used)` and the limit current at blocking time is reached too), `usage.TenantUsageLimits` (`of(tenantId)`: the `UsageLimits` of the tenant's tier at that moment, from `TenantRegistry` and `QuotaSettings`), `usage.UsageRecorder` (hands events to the writer executor; on the writer resolves the tenant's limits, skips an event of an unknown tenant, applies it through the port and passes the returned `used` with the same limits to its `RecordedUsageListener`; reports outage start and end through `RecordingOutage`), `usage.RecordedUsageListener` (`usageRecorded(event, used, limits)`), `usage.UsageCounter` port (`record(event, limits)` → `used`) with `UsageRecordingFailedException`, `usage.UsageRecordingAlerts` port, `admin.ListTiers` (→ `TierLimit`s), `admin.ChangeTenantTier` (→ `TierChange.Changed` or `TenantNotFound`), `metrics.TrafficMetricsReader` port with `MetricsReadFailedException`, `metrics.LatestTrafficMetrics` (in-memory cache, 3 s max age), `metrics.RefreshTrafficMetrics`, `snapshot.BuildAdminSnapshot` (→ `AdminSnapshot` with `TenantRows.Available` / `Unavailable`, `TenantRow`, `RowUsage`), `snapshot.TenantUsageReader` port (`usageOf`, `flaggedTenants`) with `TenantUsage` and `UsageReadFailedException`, `snapshot.PageRequest`, `snapshot.SnapshotQuery` |
+| `:adapters:api` | `com.mikeflat.gateway.adapters.api` | inbound adapters (web, filter) | now: `filter.QuotaFilter` (tenant guard and `429` for blocked tenants) with its `TenantIdHeader` parser, `web.StubController`, `web.AdminController` with `AdminParameters` (tier/status/id/paging parsing, `400`) and `AdminDtoMapper`, `web.ConstraintViolationProblemAdvice` (bean-validation failures of admin parameters → `400` problem) |
+| `:adapters:infra` | `com.mikeflat.gateway.adapters.infra` | outbound adapters: communication with other services (Redis) | now: `redis.RedisKeys` (builders for every key), `redis.RedisUsageCounter` (implements `UsageCounter`) and the `redis/record-usage.lua` script resource (tenant counters, global traffic counts, near/over sets), `redis.RedisTrafficMetricsReader` (implements `TrafficMetricsReader`, one pipeline), `redis.RedisTenantUsageReader` (implements `TenantUsageReader`), `logging.Slf4jUsageRecordingAlerts` (implements `UsageRecordingAlerts`) |
 | `:adapters:persistence` | `com.mikeflat.gateway.adapters.persistence` | outbound adapters: data sources, one subpackage per storage technology | now: `file.JsonFileTenantRepository`; later: a `db` package if tenants move to a database |
-| `:bootstrap` | `com.mikeflat.gateway.bootstrap` | infrastructure / frameworks: main class, wiring | `GatewayApplication`, per-module `@Configuration` classes, `@ConfigurationProperties`, `TenantLoadFailureAnalyzer`, `config.UsageWriterExecutor` (the single-thread usage writer with its bounded queue) |
+| `:bootstrap` | `com.mikeflat.gateway.bootstrap` | infrastructure / frameworks: main class, wiring | `GatewayApplication`, per-module `@Configuration` classes, `@ConfigurationProperties`, `TenantLoadFailureAnalyzer`, `config.UsageWriterExecutor` (the single-thread usage writer with its bounded queue), `config.MetricsRefreshScheduler` (the `metrics-refresh` thread) |
 
 `adapters/` is only a folder that groups the adapter projects. It has no build logic.
 
@@ -63,15 +64,17 @@ The gateway follows a DDD / hexagonal rule for ports:
 | Port kind | Declared in | Implemented in | Examples |
 |---|---|---|---|
 | Repository of domain objects (loading/storing tenants, …) | the domain package of the aggregate it serves, with its exceptions | `:adapters:persistence` (one subpackage per storage technology) | `TenantRepository` → `JsonFileTenantRepository` |
-| Other outbound port (Redis usage recording and metrics, other services) | `:app`, next to the use case that needs it | `:adapters:infra` | `UsageCounter` → `RedisUsageCounter`, `UsageRecordingAlerts` → `Slf4jUsageRecordingAlerts` |
-| Inbound port | `:app` use cases | called by `:adapters:api` (and by bootstrap at startup) | `LoadTenantRegistry`, `AdmitBusinessCall` |
+| Other outbound port (Redis usage recording and metrics, other services) | `:app`, next to the use case that needs it | `:adapters:infra` | `UsageCounter` → `RedisUsageCounter`, `UsageRecordingAlerts` → `Slf4jUsageRecordingAlerts`, `TrafficMetricsReader` → `RedisTrafficMetricsReader`, `TenantUsageReader` → `RedisTenantUsageReader` |
+| Inbound port | `:app` use cases | called by `:adapters:api` (and by bootstrap at startup or on a timer) | `LoadTenantRegistry`, `AdmitBusinessCall`, `ListTiers`, `ChangeTenantTier`, `BuildAdminSnapshot`, `RefreshTrafficMetrics` |
 
 So moving tenants to a database only adds a `db` package to `:adapters:persistence` and changes
 `PersistenceConfiguration`; the domain, use cases and other adapters stay untouched.
 
-Time comes from `java.time.Clock`, a JDK type injected into `AdmitBusinessCall`, so no custom
-clock port is needed and tests use `Clock.fixed`. Likewise `UsageRecorder` takes a plain
-`java.util.concurrent.Executor`; the bounded thread pool behind it is built in `:bootstrap`.
+Time comes from `java.time.Clock`, a JDK type injected into `AdmitBusinessCall`,
+`BlockTenantsOverLimit`, `RefreshTrafficMetrics` and `BuildAdminSnapshot`, so no custom clock
+port is needed and tests use `Clock.fixed`. Likewise `UsageRecorder` takes a plain
+`java.util.concurrent.Executor`; the bounded thread pool behind it is built in `:bootstrap`, and
+so is the one-second timer that calls `RefreshTrafficMetrics.refresh()`.
 
 ## Dependency rules
 
@@ -111,9 +114,9 @@ One exception: controllers and controller advice in `adapters:api` carry `@RestC
 | Module                 | Configuration class                                   | Beans now |
 |------------------------|-------------------------------------------------------|-----------|
 | `domain`               | `bootstrap/.../config/DomainConfiguration.java`       | `QuotaSettings` (from `QuotaProperties`), `BlockedTenants`, `AdmissionPolicy` (from `TenantRegistry`, `BlockedTenants`, `QuotaSettings`) |
-| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `BlockTenantsOverLimit`, `TenantUsageLimits`, `UsageRecorder` (with `TenantUsageLimits`, the writer executor, `BlockTenantsOverLimit` as its listener and `UsageRecordingAlerts`), `AdmitBusinessCall` |
-| `adapters:api`         | `bootstrap/.../config/ApiConfiguration.java`          | `StubController`, `FilterRegistrationBean<QuotaFilter>` (URL pattern `/api/*`, `REQUEST` dispatches only) |
-| `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | `RedisScript<Long>` (`redis/record-usage.lua`), `UsageCounter` (`RedisUsageCounter`, key TTL two periods), `UsageRecordingAlerts` (`Slf4jUsageRecordingAlerts`), `usageWriterExecutor` (from `UsageRecordingProperties`, destroyed with `shutdownNow`) |
+| `app`                  | `bootstrap/.../config/AppConfiguration.java`          | `LoadTenantRegistry`, `TenantRegistry`, `Clock` (UTC system clock), `BlockTenantsOverLimit` (with `TenantUsageLimits` for the re-check), `TenantUsageLimits`, `UsageRecorder` (with `TenantUsageLimits`, the writer executor, `BlockTenantsOverLimit` as its listener and `UsageRecordingAlerts`), `AdmitBusinessCall`, `ListTiers`, `ChangeTenantTier`, `LatestTrafficMetrics`, `RefreshTrafficMetrics`, `BuildAdminSnapshot` |
+| `adapters:api`         | `bootstrap/.../config/ApiConfiguration.java`          | `StubController`, `AdminController`, `ConstraintViolationProblemAdvice`, `FilterRegistrationBean<QuotaFilter>` (URL pattern `/api/*`, `REQUEST` dispatches only) |
+| `adapters:infra`       | `bootstrap/.../config/InfraConfiguration.java`        | `RedisScript<Long>` (`redis/record-usage.lua`), `UsageCounter` (`RedisUsageCounter`, key TTL two periods), `UsageRecordingAlerts` (`Slf4jUsageRecordingAlerts`), `usageWriterExecutor` (from `UsageRecordingProperties`, destroyed with `shutdownNow`), `TrafficMetricsReader` (`RedisTrafficMetricsReader`), `TenantUsageReader` (`RedisTenantUsageReader`), `MetricsRefreshScheduler` (calls `RefreshTrafficMetrics` every second, closed with the context) |
 | `adapters:persistence` | `bootstrap/.../config/PersistenceConfiguration.java`  | `TenantRepository` (`JsonFileTenantRepository`, from `TenantsProperties`) |
 
 `GatewayApplication` imports all five.
@@ -127,8 +130,16 @@ At build time, `openApiGenerate` (run before `compileJava`) generates interfaces
 Generated code is not committed; controllers implement the generated interfaces.
 
 The spec defines `GET /api/v1/resource` (tag `Resource`) with its `200`, `400` and `429`
-(with `Retry-After`) responses, which generates `ResourceApi` and the `MockResource` DTO. `ProblemDetail` is mapped to Spring's own class, so no model is generated for
-it. The admin API adds its paths to this file later.
+(with `Retry-After`) responses, which generates `ResourceApi` and the `MockResource` DTO. The
+tag `Admin` holds `GET /admin/tiers`, `PUT /admin/tenants/{id}/tier` and `GET /admin/snapshot`,
+which generate `AdminApi` and the DTOs `TierLimit`, `TierChangeRequest`, `TenantTier`,
+`AdminSnapshot`, `QuotaPeriod`, `TrafficMetrics`, `SecondTraffic`, `PeriodTotals`, `TenantPage`
+and `TenantRow`. `ProblemDetail` is mapped to Spring's own class, so no model is generated for
+it.
+
+The generated interfaces carry `@Validated`, so Spring validates the `id`, `page` and `size`
+bounds through a method-validation proxy, which throws `ConstraintViolationException`.
+`ConstraintViolationProblemAdvice` turns that into a `400` problem body for `AdminController`.
 
 ## Business API
 
@@ -160,7 +171,7 @@ The `detail` is `Missing X-Tenant-Id header` when the header is absent or blank,
 `X-Tenant-Id does not identify a known tenant` for any other value (malformed, `0`, negative,
 too long or not registered). The header value is never echoed in the body or logs. With a known
 tenant, an unknown path under `/api/` returns `404`. Paths outside `/api/` (`/actuator/health`,
-later the admin API, and look-alikes such as `/apix/...`) are not guarded.
+the admin API, and look-alikes such as `/apix/...`) are not guarded.
 
 **Quota exhausted.** A known tenant that is blocked for the current period gets `429 Too Many
 Requests` from `QuotaFilter`, before any controller runs. `Retry-After` holds the whole seconds
@@ -171,6 +182,104 @@ values, and no rate-limit headers are sent:
 ```json
 {"type":"about:blank","title":"Too Many Requests","status":429,"detail":"Quota for the current period is exhausted","instance":"/api/v1/resource"}
 ```
+
+## Admin API
+
+Three endpoints for the admin dashboard, outside `/api/`, so they need no `X-Tenant-Id` and are
+never counted or limited. There is no authentication (out of scope). Errors are
+`application/problem+json` (`type`, `title`, `status`, `detail`, `instance`); a `detail` never
+echoes the rejected value.
+
+**`GET /admin/tiers`** → `200`, the tiers in order Bronze, Silver, Gold with their configured
+limit per period. No Redis call.
+
+```json
+[{"name":"Bronze","limit":100},{"name":"Silver","limit":1000},{"name":"Gold","limit":10000}]
+```
+
+**`PUT /admin/tenants/{id}/tier`** with body `{"tier":"Gold"}` (any letter case) → `200` with the
+tenant after the change and the limit of its new tier:
+
+```json
+{"id":1,"name":"Acme Corp","tier":"Gold","limit":10000}
+```
+
+The change lives only in gateway memory: the tenants file is not written and a restart restores
+the seed tiers. It makes no Redis call, so it works during an outage, and it unblocks the tenant
+(see [Quota enforcement](#quota-enforcement)). Setting the same tier again also unblocks; the
+tenant's next event blocks it again if it is still over. Errors:
+
+| Case | Status |
+|---|---|
+| `id` is an integer but no tenant has it | `404` |
+| `id` not a positive integer (`acme`, `0`) | `400` |
+| body missing or not JSON, `tier` missing or not Bronze/Silver/Gold | `400` |
+
+**`GET /admin/snapshot`** → `200` with `period`, `metrics` and `tenants` (shortened: `perSecond`
+always has 60 entries, oldest first):
+
+```json
+{
+  "period": {"index": 100000, "endsAt": "1970-03-11T10:41:00Z", "secondsLeft": 15},
+  "metrics": {
+    "perSecond": [{"second": 5999985, "allowed": 0, "rejected": 0}, {"second": 6000044, "allowed": 3, "rejected": 1}],
+    "totals": {"allowed": 120, "rejected": 7},
+    "tenantsNear": 2,
+    "tenantsOver": 1
+  },
+  "tenants": {
+    "rowsAvailable": true,
+    "rows": [{"id": 1, "name": "Acme Corp", "tier": "Bronze", "limit": 100, "used": 85, "rejected": 0, "status": "near"}],
+    "total": 15,
+    "page": 0,
+    "size": 10
+  }
+}
+```
+
+| Query parameter | Meaning | Invalid → `400` |
+|---|---|---|
+| `name` | name contains this text, ignoring case | — |
+| `id` | exact tenant id | not a positive integer |
+| `tier` | `Bronze`, `Silver`, `Gold`, any letter case | unknown tier |
+| `status` | `ok`, `near`, `over`, any letter case | unknown status |
+| `page` | page from `0`, default `0` | negative or not an integer |
+| `size` | rows per page, default `10` | outside `1..100` or not an integer |
+
+Filters combine; an empty value (`?name=&tier=`) means no filter, and unknown parameters are
+ignored. Rows are sorted by name (case-insensitive, then id) and cut at offset `page × size`;
+`total` counts all matching tenants, and a page past the end has no rows.
+
+- **`period`** comes from the gateway clock at request time, never from Redis.
+- **`metrics`** is the global part: `perSecond` covers the 60 complete seconds before the last
+  read (`0` for quiet seconds), `totals` the current period, `tenantsNear` / `tenantsOver` the
+  sizes of the period's near and over sets. It is read by the daemon thread `metrics-refresh`
+  once per second (`RefreshTrafficMetrics`, reading period `p` and second `now − 1`) in one
+  pipelined round trip (two `MGET` of 60 keys, one `MGET` of the two totals, two `SCARD`), and
+  kept in memory (`LatestTrafficMetrics`). Snapshot requests only read that cache, so the global
+  part costs the same whatever the number of tenants or open dashboards.
+- **Rows** carry `id`, `name`, `tier` and `limit` from the registry, and `used`, `rejected`
+  (`0` when absent) and `status` from one `MGET` of `quota:used:*` and `quota:rejected:*` for the
+  tenants on the page only. `status` is computed from `used` against the tenant's *current*
+  limit: `over` at `used ≥ limit`, `near` from the near boundary, else `ok`.
+- **Status filter.** `status=near` / `status=over` keeps tenants that are members of the current
+  period's set (`SMEMBERS`); `status=ok` keeps tenants in neither set (`SUNION` of both). The sets
+  change only on a tenant's next event, so right after a tier change a tenant can still be listed
+  under `status=over` while its row shows `ok`.
+- **Redis cost per snapshot request:** none for the global part; at most one round trip for a
+  status filter plus one `MGET` for the page (none for an empty page).
+
+**`null` when Redis can't be read.** The snapshot still answers `200`:
+
+| Part | Redis unreachable or hanging |
+|---|---|
+| `period` | always present |
+| `metrics` | `null` when the last background read failed or none succeeded within the last 3 s; back within about a second after Redis returns |
+| rows without `status` filter | present with `id`, `name`, `tier`, `limit`; `used`, `rejected`, `status` are `null`; `total`, `page`, `size` correct |
+| rows with a `status` filter | `"rowsAvailable": false`, `"rows": null`, `"total": null` |
+
+`rowsAvailable` is `true` in every other response. A hung Redis delays the row read by at most
+the `1s` command timeout; snapshot read failures are not logged.
 
 ## Quota enforcement
 
@@ -186,6 +295,17 @@ in `BlockedTenants`, with no Redis call.
   same `UsageLimits` the script got for the near/over sets). At
   `used ≥ limit`, and only if the event's period is still the current one, the tenant is added
   to the blocked set. Rejected events and late events of a past period never block.
+- **Tier change unblocks.** `PUT /admin/tenants/{id}/tier` updates the registry first and then
+  removes the tenant from the blocked set, in memory and without Redis. Its next request is
+  served; its next applied allowed event is checked against the new limit and the existing
+  counters, which the change leaves untouched. Other blocked tenants stay blocked.
+- **Blocking re-checks the current limit.** An event whose `used` was compared with the old,
+  lower limit could otherwise block a tenant right after its upgrade. `BlockedTenants.blockIf`
+  and `unblock` are `synchronized`, and `BlockTenantsOverLimit` re-reads the tenant's current
+  limit inside that lock, so either the block happens first and the tier change undoes it, or the
+  re-check already sees the new tier. After a downgrade, the event checked against the old,
+  higher limit does not block; the tenant's next allowed event does. `isBlocked` on the request
+  path stays lock-free.
 - **Rejections are counted, not used.** A `429` produces a rejected usage event, so
   `quota:rejected:{tenantId}:{p}` grows and `quota:used:{tenantId}:{p}` does not.
 - **Bounded overshoot.** Requests arriving between the one that reaches the limit and the writer
@@ -370,12 +490,12 @@ Run these from `gateway/`:
 ```bash
 ./gradlew build                      # compile, run all tests, build the jar
 ./gradlew test                       # all tests
-./gradlew :domain:test               # domain unit tests (tiers, tenants, registry, quota settings, usage limits, usage events, blocked set, admission policy)
-./gradlew :app:test                  # use case tests (tenant loading, request admission, blocking over the limit, overshoot, tenant usage limits, usage recorder, recording outage alerts)
-./gradlew :adapters:api:test         # tenant guard and 429 filter, problem body and stub controller tests
-./gradlew :adapters:infra:test       # Redis usage counter and record script incl. traffic counts, TTLs and near/over sets (Testcontainers Redis), outage log lines
+./gradlew :domain:test               # domain unit tests (tiers, tenants, registry incl. filtering and tier change, tenant filter, quota settings and period, usage limits, tenant status, usage events, blocked set incl. unblock and blockIf, admission policy)
+./gradlew :app:test                  # use case tests (tenant loading, request admission, blocking over the limit incl. tier change races, overshoot, tenant usage limits, usage recorder, recording outage alerts, tier listing and change, metrics cache and refresh, page request, admin snapshot)
+./gradlew :adapters:api:test         # tenant guard and 429 filter, problem body, stub controller, admin controller (MockMvcTester), admin parameters, DTO mapping, constraint-violation advice
+./gradlew :adapters:infra:test       # Redis usage counter and record script incl. traffic counts, TTLs and near/over sets, traffic metrics reader, tenant usage reader (Testcontainers Redis), outage log lines
 ./gradlew :adapters:persistence:test # tenants file adapter tests
-./gradlew :bootstrap:test            # configuration, startup, health with and without Redis, probes, business endpoint, usage writer, usage recording with and without Redis, traffic metrics recording, quota enforcement (incl. Redis down), Redis stopped mid-run, port and architecture tests
+./gradlew :bootstrap:test            # configuration, startup, health with and without Redis, probes, business endpoint, usage writer, metrics refresh scheduler, usage recording with and without Redis, traffic metrics recording, quota enforcement (incl. Redis down), admin API, tier change, admin without Redis, Redis stopped mid-run (incl. snapshot metrics), port and architecture tests
 ./gradlew :adapters:api:compileJava  # generate from the OpenAPI spec, compile
 ./gradlew :bootstrap:bootRun         # run from source on port 8080 (Redis not needed)
 java -jar bootstrap/build/libs/gateway.jar                    # run the built jar (reads ../config/tenants.json)

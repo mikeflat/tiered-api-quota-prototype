@@ -44,11 +44,12 @@ class QuotaOvershootTest {
     private AdmitBusinessCall wire() {
         TenantRegistry registry = new TenantRegistry(List.of(ACME));
         BlockedTenants blockedTenants = new BlockedTenants();
+        TenantUsageLimits tenantUsageLimits = new TenantUsageLimits(registry, BRONZE_LIMIT_FIVE);
         UsageRecorder recorder = new UsageRecorder(
                 counter,
-                new TenantUsageLimits(registry, BRONZE_LIMIT_FIVE),
+                tenantUsageLimits,
                 writer,
-                new BlockTenantsOverLimit(BRONZE_LIMIT_FIVE, blockedTenants, CLOCK),
+                new BlockTenantsOverLimit(BRONZE_LIMIT_FIVE, blockedTenants, tenantUsageLimits, CLOCK),
                 new SilentUsageRecordingAlerts());
         return new AdmitBusinessCall(
                 new AdmissionPolicy(registry, blockedTenants, BRONZE_LIMIT_FIVE), recorder, BRONZE_LIMIT_FIVE, CLOCK);
